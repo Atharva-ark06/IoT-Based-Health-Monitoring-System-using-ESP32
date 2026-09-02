@@ -1,4 +1,4 @@
-# 🩺 IoT-Based Health Monitoring System using ESP32
+#  IoT-Based Health Monitoring System using ESP32
 
 <div align="center">
 
