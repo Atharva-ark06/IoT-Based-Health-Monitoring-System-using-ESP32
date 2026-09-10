@@ -2,9 +2,9 @@
 
 <div align="center">
 
-### 📡 Real-Time Health Monitoring • IoT • Embedded Systems • Cloud
+### 📡 Smart • Connected • Real-Time Health Monitoring
 
-An IoT-powered health monitoring prototype that collects vital health data using sensors, processes it through an **ESP32**, and enables real-time monitoring through a web-based dashboard.
+An **IoT-based health monitoring prototype** using ESP32 to collect sensor data, process it in real time, and transmit it through Wi-Fi for monitoring and cloud logging.
 
 <br/>
 
@@ -12,146 +12,59 @@ An IoT-powered health monitoring prototype that collects vital health data using
 <img src="https://img.shields.io/badge/Arduino-IDE-00979D?style=for-the-badge&logo=arduino&logoColor=white"/>
 <img src="https://img.shields.io/badge/C%2FC%2B%2B-Embedded-00599C?style=for-the-badge&logo=cplusplus&logoColor=white"/>
 <img src="https://img.shields.io/badge/Healthcare-IoT-E63946?style=for-the-badge"/>
-<img src="https://img.shields.io/badge/Wi--Fi-Connected-00A67E?style=for-the-badge&logo=wifi&logoColor=white"/>
-
-<br/><br/>
-
-[![GitHub](https://img.shields.io/badge/GitHub-Atharva--ark06-181717?style=flat-square\&logo=github)](https://github.com/Atharva-ark06)
-[![License](https://img.shields.io/badge/License-Academic_Project-blue?style=flat-square)](#-disclaimer)
+<img src="https://img.shields.io/badge/Wi--Fi-Connected-00A67E?style=for-the-badge&logo=wifi"/>
 
 </div>
 
 ---
 
-## 🧠 Overview
+## 🧠 About
 
-The **IoT-Based Health Monitoring System** is an embedded IoT project designed to demonstrate how connected sensors can be used for **real-time health data collection and monitoring**.
+This project uses an **ESP32** to collect health-related sensor data and transmit it wirelessly over **Wi-Fi**. The data can be visualized through a web dashboard and logged using cloud-based services.
 
-The system uses an **ESP32 microcontroller** as the central processing unit. Sensors collect physiological and environmental data, which is processed by the ESP32 and transmitted through **Wi-Fi** for visualization and cloud-based logging.
+### ✨ Features
 
-> **ESP32 + Sensors + Wi-Fi + Cloud + Dashboard = Connected Health Monitoring**
-
----
-
-## ✨ Key Features
-
-| Feature                        | Description                                        |
-| ------------------------------ | -------------------------------------------------- |
-| ❤️ **Heart Rate Monitoring**   | Captures heart-rate data using a heart-rate sensor |
-| 🌡️ **Temperature Monitoring** | Measures temperature using the DHT11 sensor        |
-| 📡 **Wi-Fi Connectivity**      | Enables wireless communication through ESP32       |
-| 📊 **Live Dashboard**          | Displays sensor readings through a web interface   |
-| ☁️ **Cloud Logging**           | Sends data to cloud-based services for storage     |
-| ⚡ **Real-Time Processing**     | ESP32 processes sensor data before transmission    |
-| 📈 **Data Visualization**      | Makes collected readings easier to analyze         |
+* ❤️ Heart Rate Monitoring
+* 🌡️ Temperature Monitoring using DHT11
+* 📡 Wi-Fi Connectivity
+* 📊 Real-Time Dashboard
+* ☁️ Cloud Data Logging
+* ⚡ ESP32-Based Processing
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ System Workflow
 
 ```text
-                 ┌─────────────────────┐
-                 │     DHT11 Sensor    │
-                 │     🌡️ Temperature  │
-                 └──────────┬──────────┘
-                            │
-                            │
-                 ┌──────────▼──────────┐
-                 │  Heart Rate Sensor  │
-                 │       ❤️ BPM        │
-                 └──────────┬──────────┘
-                            │
-                            ▼
-                 ┌─────────────────────┐
-                 │        ESP32        │
-                 │   ⚡ Data Processing │
-                 └──────────┬──────────┘
-                            │
-                         Wi-Fi
-                            │
-                            ▼
-                 ┌─────────────────────┐
-                 │    Cloud Service    │
-                 │        ☁️           │
-                 └──────────┬──────────┘
-                            │
-                            ▼
-                 ┌─────────────────────┐
-                 │   Web Dashboard     │
-                 │    📊 Monitoring    │
-                 └─────────────────────┘
+🌡️ DHT11 ─────┐
+               │
+❤️ Heart Rate ─┼──► ESP32 ──► Wi-Fi ──► Cloud
+               │                         │
+               └─────────────────────────▼
+                                   📊 Dashboard
 ```
 
 ---
 
-## 🔄 How It Works
+## 🔧 Hardware
 
-```text
-Sensors
-   ↓
-Data Collection
-   ↓
-ESP32 Processing
-   ↓
-Wi-Fi Transmission
-   ↓
-Cloud / Web Service
-   ↓
-Dashboard Visualization
-```
-
-### 1️⃣ Sense
-
-The **DHT11** and **Heart Rate Sensor** collect health-related readings.
-
-### 2️⃣ Process
-
-The ESP32 receives and processes the sensor data.
-
-### 3️⃣ Connect
-
-The ESP32 establishes a **Wi-Fi connection** and transmits the readings.
-
-### 4️⃣ Store
-
-Data can be logged using **Google Sheets or other cloud services**.
-
-### 5️⃣ Monitor
-
-The web dashboard presents the readings in an accessible format.
+| Component            | Purpose                |
+| -------------------- | ---------------------- |
+| 🟦 ESP32             | Main controller        |
+| 🌡️ DHT11            | Temperature sensing    |
+| ❤️ Heart Rate Sensor | Heart-rate measurement |
+| 🔌 Jumper Wires      | Connections            |
+| 🧱 Breadboard        | Prototyping            |
 
 ---
 
-## 🔧 Hardware Components
+## 💻 Tech Stack
 
-| Component                | Role                                         |
-| ------------------------ | -------------------------------------------- |
-| 🟦 **ESP32**             | Main microcontroller and Wi-Fi communication |
-| 🌡️ **DHT11**            | Temperature measurement                      |
-| ❤️ **Heart Rate Sensor** | Heart-rate measurement                       |
-| 🔌 **Jumper Wires**      | Sensor connections                           |
-| 🧱 **Breadboard**        | Circuit prototyping                          |
-| 🔋 **USB Cable**         | Power and programming                        |
-
----
-
-## 💻 Technology Stack
-
-### ⚙️ Embedded
-
-`ESP32` · `C/C++` · `Arduino IDE`
-
-### 🌐 Web
-
-`HTML` · `CSS` · `JavaScript`
-
-### 📡 Communication
-
-`Wi-Fi`
-
-### ☁️ Cloud & Data
-
-`Google Sheets` · `Cloud Services`
+**Hardware:** ESP32, DHT11, Heart Rate Sensor
+**Programming:** C/C++, Arduino IDE
+**Web:** HTML, CSS, JavaScript
+**Communication:** Wi-Fi
+**Cloud:** Google Sheets / Cloud Services
 
 ---
 
@@ -164,165 +77,51 @@ IoT-Based-Health-Monitoring-System-using-ESP32/
 │   └── 📄 sensor_dashboard.html
 │
 ├── 📂 PBL Reports & Documentation/
+│   └── 📄 Project Reports
 │
 ├── 📂 Project Presentations/
+│   └── 📄 Project PPTs
 │
-└── 📄 README.md
+├── 📄 README.md
+│
+└── 📄 Other Project Files
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Clone the Repository
-
 ```bash
 git clone https://github.com/Atharva-ark06/IoT-Based-Health-Monitoring-System-using-ESP32.git
-```
-
-```bash
 cd IoT-Based-Health-Monitoring-System-using-ESP32
 ```
 
-### 2. Prepare Arduino IDE
+1. Open the ESP32 source code in **Arduino IDE**.
+2. Install the required ESP32 board package and libraries.
+3. Connect the sensors to the ESP32.
+4. Add your Wi-Fi credentials.
+5. Select the ESP32 board and COM port.
+6. Upload the code.
+7. Open the dashboard to monitor readings.
 
-1. Install **Arduino IDE**.
-2. Add the **ESP32 board package**.
-3. Connect the ESP32 using USB.
-4. Select the appropriate ESP32 board.
-5. Select the correct COM port.
-
-### 3. Install Required Libraries
-
-Install the libraries required by the project through:
-
-```text
-Arduino IDE
-   ↓
-Library Manager
-   ↓
-Install Required Libraries
-```
-
-### 4. Configure Wi-Fi
-
-Add your Wi-Fi credentials to the ESP32 code.
-
-```cpp
-const char* ssid = "YOUR_WIFI_NAME";
-const char* password = "YOUR_WIFI_PASSWORD";
-```
-
-> 🔐 **Important:** Never commit real Wi-Fi passwords, API keys, tokens, or private credentials to GitHub.
-
-### 5. Upload
-
-Upload the firmware to the ESP32 and open the Serial Monitor to verify the connection and sensor readings.
-
-### 6. Open Dashboard
-
-Launch:
-
-```text
-health/sensor_dashboard.html
-```
-
-to view the monitoring interface.
+> 🔐 Never upload Wi-Fi passwords, API keys, or private credentials to GitHub.
 
 ---
 
-## 📊 Monitoring Dashboard
+## 🔮 Future Scope
 
-The dashboard is designed to provide a simple interface for viewing collected sensor information.
-
-Example monitored parameters:
-
-```text
-┌─────────────────────────────────────────┐
-│          HEALTH MONITORING              │
-├─────────────────────────────────────────┤
-│                                         │
-│       ❤️ Heart Rate     78 BPM          │
-│                                         │
-│       🌡️ Temperature    27.4 °C         │
-│                                         │
-│       📡 Wi-Fi          Connected        │
-│                                         │
-│       ☁️ Cloud          Active           │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 🎯 Project Objectives
-
-* Build a practical **IoT-based healthcare prototype**
-* Understand ESP32 sensor interfacing
-* Collect real-time sensor data
-* Implement wireless data transmission
-* Develop a web-based monitoring interface
-* Explore cloud-based data logging
-* Understand the fundamentals of connected healthcare systems
-
----
-
-## 🔮 Future Enhancements
-
-The system can be further extended with:
-
-* 📱 **Dedicated Mobile Application**
-* 🤖 **AI-Based Health Anomaly Detection**
-* 🚨 **Emergency Alert System**
-* 📈 **Historical Health Analytics**
-* 🔐 **Encrypted Data Transmission**
-* 👤 **User Authentication**
-* ☁️ **Advanced Cloud Database**
-* 📊 **Interactive Health Reports**
-* 🧠 **Machine Learning-Based Prediction**
-
----
-
-## 🔐 Security Considerations
-
-Since healthcare-related systems can involve sensitive information, future versions should consider:
-
-* 🔒 End-to-end data encryption
-* 🔑 Secure authentication
-* 🛡️ API security
-* 🔐 Credential protection
-* 📡 Secure wireless communication
-* 👤 Role-based access control
-* 🗄️ Secure cloud storage
-
-> **Security is an important consideration when transforming an academic prototype into a real-world healthcare system.**
-
----
-
-## 📚 Learning Outcomes
-
-Through this project, the following concepts were explored:
-
-```text
-IoT
- ├── Sensor Integration
- ├── Embedded Programming
- ├── ESP32
- ├── Wi-Fi Communication
- ├── Data Processing
- ├── Cloud Connectivity
- └── Web Visualization
-```
+* 📱 Mobile Application
+* 🤖 AI-Based Health Anomaly Detection
+* 🚨 Emergency Alerts
+* 📈 Historical Health Analytics
+* 🔐 Secure Data Transmission
+* ☁️ Advanced Cloud Integration
 
 ---
 
 ## ⚠️ Disclaimer
 
-This project is an **academic and educational IoT prototype**.
-
-The sensor readings generated by this system **must not be considered medical-grade measurements, professional medical advice, or a clinical diagnosis**.
-
-For real healthcare applications, certified medical hardware, validated algorithms, proper security controls, and regulatory compliance would be required.
+This is an **academic IoT prototype** created for educational purposes. The sensor readings should not be considered a medical diagnosis or a replacement for professional medical equipment.
 
 ---
 
@@ -332,27 +131,12 @@ For real healthcare applications, certified medical hardware, validated algorith
 
 ### **Atharva Kulkarni**
 
-**Computer Science & Information Security Student**
-**AI/ML • Cybersecurity • IoT • Emerging Technologies**
-
-<br/>
-
 [![GitHub](https://img.shields.io/badge/GitHub-Atharva--ark06-181717?style=for-the-badge\&logo=github)](https://github.com/Atharva-ark06)
 
-</div>
-
----
-
-<div align="center">
-
-### ⭐ If you found this project interesting, consider giving it a star!
-
 <br/>
 
-**ESP32 × IoT × Healthcare × Cloud**
+⭐ **If you found this project interesting, consider giving it a star!**
 
-<br/>
-
-`Built for learning. Designed for innovation. 🚀`
+**ESP32 × IoT × Healthcare 🚀**
 
 </div>
