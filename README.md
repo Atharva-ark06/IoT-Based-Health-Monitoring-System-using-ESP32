@@ -2,7 +2,7 @@
 
 <div align="center">
 
-### 📡 Real-Time Health Monitoring with IoT
+### 📡 Real-Time Health Monitoring with IoT 
 
 <img src="https://img.shields.io/badge/ESP32-IoT-0066FF?style=for-the-badge&logo=espressif&logoColor=white"/>
 <img src="https://img.shields.io/badge/Arduino-IDE-00979D?style=for-the-badge&logo=arduino&logoColor=white"/>
