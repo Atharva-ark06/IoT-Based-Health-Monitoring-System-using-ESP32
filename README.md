@@ -32,7 +32,7 @@ This project uses an **ESP32** to collect health-related sensor data, process it
 
 ---
 
-## 🏗️ System Workflow
+## 🏗️  System Workflow
 
 ```text
 🌡️ DHT11 ──────────┐
