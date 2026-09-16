@@ -90,9 +90,11 @@ IoT-Based-Health-Monitoring-System-using-ESP32/
 
 ## 🚀 Getting Started
 
+# clone the repo
 ```bash
 git clone https://github.com/Atharva-ark06/IoT-Based-Health-Monitoring-System-using-ESP32.git
 ```
+# change directory 
 ```
 cd IoT-Based-Health-Monitoring-System-using-ESP32
 ```
