@@ -2,53 +2,47 @@
 
 This repository is an educational IoT health-monitoring prototype, not a production medical system.
 
-## Scope and data flow
-
-The current repository contains a browser-based dashboard at `health/sensor_dashboard.html`. The dashboard downloads CSV data directly from a configured HTTPS source and renders sensor readings in the browser. No ESP32 firmware source or server-side ingestion service is currently present in the repository, so device authentication and firmware transport controls cannot yet be verified or implemented here.
-
 ## Data classification
 
-Temperature and heart-rate readings can be sensitive personal data. Treat real readings as confidential even when the dashboard is only used for a classroom demonstration.
+Temperature and heart-rate readings can be sensitive personal data.
 
 - Use synthetic readings for demos, screenshots, tests, and public examples.
-- Do not publish a spreadsheet containing real readings or personal identifiers.
-- A spreadsheet ID or URL is not an authentication mechanism. Anyone with access to a public export can retrieve its data.
-- Configure the dashboard only with an HTTPS CSV endpoint that is intentionally readable by its intended audience.
-- Do not put passwords, API keys, bearer tokens, or private credentials in HTML, JavaScript, Git history, or a public repository.
+- Do not publish spreadsheets containing real readings or personal identifiers.
+- A spreadsheet ID or URL is not authentication. Anyone with access to a public export can retrieve its data.
+- Use only an HTTPS CSV source intentionally accessible to its audience.
+- Never commit Wi-Fi passwords, API keys, bearer tokens, device secrets, or private credentials.
 
-## Threat model
+## Current protections
 
-| Threat | Example | Mitigation / current status |
+| Area | Control | Limit |
 | --- | --- | --- |
-| Unintended data disclosure | A public spreadsheet exposes real sensor readings | Use synthetic data; restrict source sharing; verify access in a signed-out browser |
-| Script injection | A timestamp in imported CSV contains HTML or script markup | Render imported values as text or HTML-escape them before inserting markup |
-| Malformed or incomplete readings | Missing fields or non-numeric values skew analytics | Validate readings and calculate paired metrics only from complete pairs |
-| Transport interception | Data source is fetched over cleartext HTTP | Require HTTPS for remote sources |
-| Unauthorized device writes | An unauthenticated device submits forged readings | The API requires HMAC-SHA256 signatures, a five-minute timestamp window, and single-use nonces; firmware/key provisioning remains absent |
-| Embedded credential exposure | Wi-Fi password or API token is committed | Keep credentials out of source control; use local configuration and server-side secrets where applicable |
-| Dependency compromise | Third-party scripts change or become unavailable | Pin dependency versions, review upgrades, and consider self-hosting/integrity controls before production use |
+| Dashboard source | Configured HTTPS CSV source; no embedded private token | The configured URL is public to dashboard visitors |
+| Dashboard rendering | Imported timestamps are escaped; regression tests cover key behaviors | Browser code and data displayed to users are not private from those users |
+| Device ingestion API | HMAC-SHA256 signature over timestamp, nonce, and exact request body; five-minute freshness window; replay nonce detection | Device-side signing, provisioning, and per-device keys are not implemented in the repository |
+| Payload validation | Strict schema, allowed fields/ranges, timezone-aware timestamps, request body limit | Valid-looking readings can still be inaccurate or spoofed at the sensor |
+| Reading retrieval | Separate bearer token; bounded limit; optional device and time filters | No user accounts, roles, or per-device read authorization |
+| Database | SQLite parameterized statements and indexes | No application-level encryption at rest, retention automation, or managed backup plan |
+| CI | API tests, dashboard regression tests, Bandit, and pip-audit workflow | Passing checks do not certify the full system or its deployment |
 
-## Dashboard source configuration
+## API security boundary
 
-The dashboard reads its CSV source from the `sensor-data-url` meta tag in the HTML. Set its content to an HTTPS CSV URL only when you have deliberately configured the source for the intended audience. The URL is visible to every dashboard visitor; never use it to carry a secret or to grant access to private data.
+The optional API in `backend/app.py` is a backend building block. Device writes require `X-Device-Timestamp`, `X-Device-Nonce`, and `X-Device-Signature`; the signature is HMAC-SHA256 over the timestamp, nonce, and exact raw body. Reading retrieval requires a separate `IOT_READ_API_TOKEN`.
 
-If the source is not configured, the dashboard should remain idle and explain how to configure it instead of silently requesting a repository-maintained spreadsheet.
+HMAC authenticates a request but does **not** encrypt it. Use HTTPS or a private network. Do not expose the development server directly to the internet. Never embed the read token in the static dashboard or a public CSV URL. Store secrets using environment configuration for local work and a secret manager for deployment.
 
-## Ingestion API security boundary
+## Before real-data use
 
-The optional API in `backend/app.py` authenticates write requests with HMAC-SHA256 over the timestamp, nonce, and exact request body. It rejects timestamps outside a five-minute window, duplicate nonces, unexpected fields, out-of-range readings, and oversized payloads. Reading retrieval requires a separate bearer token. The service does not enable CORS, and its read token must never be embedded in the static dashboard.
+1. Add and review firmware source, device-side signing, secure key provisioning, and TLS certificate validation.
+2. Use unique device credentials and define rotation/revocation.
+3. Put the API behind HTTPS, rate limiting, and monitoring.
+4. Define access control, retention/deletion, encrypted storage and backups, and incident response.
+5. Use an authenticated server-side dashboard integration; never expose a private bearer token to browser JavaScript.
+6. Test the complete device → API → history → authorized dashboard flow with synthetic data.
+7. Verify data permissions in a signed-out browser and remove personal identifiers unless genuinely required.
+8. Treat dashboard indicators as informational only, not medical diagnosis or a substitute for professional equipment/advice.
 
-This does **not** replace TLS: deploy behind HTTPS or keep the service on a private network. The API does not implement device enrollment, per-device secrets, encrypted-at-rest storage, a production rate limiter, user accounts, or firmware-side HMAC signing. SQLite is not encrypted by this application. Do not use real health data until those deployment and privacy requirements are addressed.
-
-## Before using real data
-
-1. Confirm that the source contains no real personal or health data unless sharing is explicitly authorized.
-2. Test source permissions from a signed-out/private browser session.
-3. Use HTTPS and an access-controlled service for any non-public readings.
-4. If adding an ingestion API, require device authentication, validate schema and ranges server-side, rate-limit requests, and avoid logging sensitive payloads.
-5. Rotate any credential that was ever committed; deleting it from the latest revision does not remove it from Git history.
-6. Treat dashboard indicators as informational only. They are not clinical decisions or a substitute for medical advice.
+The checked-in repository currently has no ESP32 `.ino` firmware source. Pin assignments, device signing, sensor calibration, and end-to-end behavior therefore cannot yet be verified from this repository.
 
 ## Reporting a vulnerability
 
-Please do not publish private health data, credentials, or an exploitable vulnerability in an issue. Contact the repository owner privately through a channel listed on their GitHub profile and include a minimal reproduction without sensitive data.
+Please report issues privately to the repository owner through a channel listed on their GitHub profile. Do not publish private health data, credentials, or exploitable details in a public issue.
