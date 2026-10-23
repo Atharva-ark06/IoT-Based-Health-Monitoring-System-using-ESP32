@@ -114,3 +114,60 @@ def test_stale_device_request_is_rejected(tmp_path):
 def test_health_endpoint_does_not_require_credentials(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_history_can_be_filtered_by_device_and_time(tmp_path):
+    client = make_client(tmp_path)
+    first = json.dumps(
+        {
+            "device_id": "esp32-lab-01",
+            "timestamp": "2026-10-22T10:00:00+00:00",
+            "temperature": 36.5,
+            "bpm": 72,
+        },
+        separators=(",", ":"),
+    ).encode()
+    second = json.dumps(
+        {
+            "device_id": "esp32-lab-02",
+            "timestamp": "2026-10-22T11:00:00+00:00",
+            "temperature": 37.0,
+            "bpm": 88,
+        },
+        separators=(",", ":"),
+    ).encode()
+    assert client.post(
+        "/api/v1/readings", content=first,
+        headers=signed_headers(first, "nonce-history-00000001"),
+    ).status_code == 201
+    assert client.post(
+        "/api/v1/readings", content=second,
+        headers=signed_headers(second, "nonce-history-00000002"),
+    ).status_code == 201
+
+    response = client.get(
+        "/api/v1/readings?device_id=esp32-lab-01&start=2026-10-22T09:00:00Z&end=2026-10-22T10:30:00Z",
+        headers={"Authorization": f"Bearer {READ_TOKEN}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["readings"][0]["device_id"] == "esp32-lab-01"
+
+
+def test_history_rejects_reversed_time_range(tmp_path):
+    client = make_client(tmp_path)
+    response = client.get(
+        "/api/v1/readings?start=2026-10-23T10:00:00Z&end=2026-10-22T10:00:00Z",
+        headers={"Authorization": f"Bearer {READ_TOKEN}"},
+    )
+    assert response.status_code == 422
+
+
+def test_history_rejects_timezone_naive_filter(tmp_path):
+    client = make_client(tmp_path)
+    response = client.get(
+        "/api/v1/readings?start=2026-10-22T10:00:00",
+        headers={"Authorization": f"Bearer {READ_TOKEN}"},
+    )
+    assert response.status_code == 422

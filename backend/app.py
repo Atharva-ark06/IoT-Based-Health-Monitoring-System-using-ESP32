@@ -23,12 +23,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 MAX_BODY_BYTES = 16 * 1024
 SIGNATURE_WINDOW_SECONDS = 300
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+DEVICE_ID_PATTERN = r"^[A-Za-z0-9_-]+$"
 
 
 class Reading(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    device_id: str = Field(min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN)
     timestamp: datetime
     temperature: float = Field(ge=-20, le=80, allow_inf_nan=False)
     bpm: int = Field(ge=20, le=250)
@@ -68,12 +69,26 @@ def _connect(db_path: str) -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_readings_timestamp ON readings(timestamp)"
     )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_readings_device_timestamp ON readings(device_id, timestamp)"
+    )
     return connection
 
 
 def _signature(secret: str, timestamp: str, nonce: str, body: bytes) -> str:
     message = timestamp.encode("ascii") + b"." + nonce.encode("ascii") + b"." + body
     return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _normalize_filter_timestamp(value: datetime | None, label: str) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{label} must include a timezone",
+        )
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def create_app(
@@ -85,7 +100,7 @@ def create_app(
     database = db_path or os.getenv("IOT_DATABASE_PATH", "data/readings.sqlite3")
     app = FastAPI(
         title="ESP32 Health Monitoring Ingestion API",
-        version="1.0.0",
+        version="1.1.0",
         description="Authenticated ingestion and separately authenticated reading access.",
         docs_url=None,
         redoc_url=None,
@@ -140,9 +155,8 @@ def create_app(
         except (ValidationError, UnicodeDecodeError, TypeError):
             raise HTTPException(status_code=422, detail="Invalid reading payload") from None
 
-        # Normalize timestamps to UTC so comparisons and retention are consistent.
         timestamp = reading.timestamp
-        if timestamp.tzinfo is None:
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise HTTPException(status_code=422, detail="timestamp must include a timezone")
         normalized_timestamp = timestamp.astimezone(timezone.utc).isoformat()
 
@@ -173,7 +187,6 @@ def create_app(
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="Device request already used") from None
         except sqlite3.Error:
-            # Avoid returning database paths, SQL, or payload details to callers.
             raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
 
         return {"id": reading_id, "status": "accepted"}
@@ -182,32 +195,65 @@ def create_app(
     def list_readings(
         authorization: Annotated[str | None, Header()] = None,
         limit: int = Query(default=100, ge=1, le=500),
+        device_id: str | None = Query(
+            default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN
+        ),
+        start: datetime | None = Query(default=None),
+        end: datetime | None = Query(default=None),
     ) -> dict[str, object]:
         expected_token = read_token or os.getenv("IOT_READ_API_TOKEN")
-        if not expected_token:
-            raise HTTPException(status_code=503, detail="Reading access is not configured")
         scheme, separator, supplied_token = (authorization or "").partition(" ")
         if (
-            not separator
+            not expected_token
+            or not separator
             or scheme.lower() != "bearer"
             or not supplied_token
             or not secrets.compare_digest(expected_token, supplied_token)
         ):
+            if not expected_token:
+                raise HTTPException(status_code=503, detail="Reading access is not configured")
             raise HTTPException(status_code=401, detail="Reading access requires authentication")
+
+        start_utc = _normalize_filter_timestamp(start, "start")
+        end_utc = _normalize_filter_timestamp(end, "end")
+        if start_utc and end_utc and start_utc > end_utc:
+            raise HTTPException(status_code=422, detail="start must be earlier than or equal to end")
+
+        # Keep SQL static and bind every user-controlled filter as a parameter.
+        parameters: list[object] = [
+            device_id, device_id,
+            start_utc, start_utc,
+            end_utc, end_utc,
+            limit,
+        ]
 
         try:
             with _connect(database) as connection:
                 rows = connection.execute(
                     """
                     SELECT id, device_id, timestamp, temperature, bpm, received_at
-                    FROM readings ORDER BY id DESC LIMIT ?
+                    FROM readings
+                    WHERE (? IS NULL OR device_id = ?)
+                      AND (? IS NULL OR timestamp >= ?)
+                      AND (? IS NULL OR timestamp <= ?)
+                    ORDER BY timestamp DESC, id DESC
+                    LIMIT ?
                     """,
-                    (limit,),
+                    parameters,
                 ).fetchall()
         except sqlite3.Error:
             raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
 
-        return {"readings": [dict(row) for row in rows]}
+        return {
+            "readings": [dict(row) for row in rows],
+            "count": len(rows),
+            "limit": limit,
+            "filters": {
+                "device_id": device_id,
+                "start": start_utc,
+                "end": end_utc,
+            },
+        }
 
     return app
 
