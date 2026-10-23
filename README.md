@@ -1,4 +1,4 @@
-# IoT-Based Health Monitoring System using ESP32
+# IoT-Based Health Monitoring System  using ESP32
 
 An educational IoT health-monitoring prototype for collecting temperature and heart-rate readings, with a browser dashboard and an optional authenticated ingestion API.
 
