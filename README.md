@@ -147,17 +147,23 @@ python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
 
 The API does not terminate TLS itself. Expose it only through HTTPS on a trusted reverse proxy or private network; do not port-forward the development server directly to the internet. Configure secrets using your deployment platform's secret manager. The database stores readings in SQLite and is not encrypted at rest by this code. Add a managed encrypted database, backups, retention policy, monitoring, and per-device key provisioning before any real health data is used. The current repository still lacks firmware, so device-side signing and secure key storage are not yet implemented.
 
-## 🔐 Security and privacy
+## 🛡️ Security, verification, and project guides
 
-- The dashboard no longer embeds a specific Google Sheets export URL.
-- Remote CSV loading requires HTTPS and omits browser credentials and referrer information.
-- Imported timestamps are escaped before being rendered in the table.
-- Temperature/BPM correlation is calculated only from paired readings from the same rows.
-- Basic regression checks are available with Node.js: `node --test tests/dashboard-security.test.mjs`.
+- The API requires HMAC-SHA256 authentication for device writes and a separate bearer token for reading history.
+- History can be filtered by `device_id`, `start`, and `end`; requests remain authenticated and result limits are bounded.
+- Dashboard regression checks run with `node --test tests/dashboard-security.test.mjs`.
+- The unified GitHub Actions workflow runs API tests, dashboard tests, Bandit, and pip-audit.
 
-These changes improve browser-side handling but do not provide device authentication, server-side access control, or a secure ingestion API. Do not treat this prototype as production-ready for personal health data. See [SECURITY.md](SECURITY.md) for the threat model and deployment guidance.
+**Read next:**
+- [Architecture and system hierarchy](docs/ARCHITECTURE.md)
+- [Setup guide](docs/SETUP.md)
+- [Project analysis, pros/cons, and roadmap](docs/PROJECT-ANALYSIS.md)
+- [Security verification checklist](docs/SECURITY-VERIFICATION.md)
+- [Security notes and threat model](SECURITY.md)
 
-## 🔮 Future Scope
+This remains an educational prototype. The ESP32 firmware is not checked in, and the static dashboard is not connected to the authenticated API. Do not embed the read token in browser code or use real health data until device provisioning, HTTPS deployment, access control, and storage/privacy controls are completed.
+
+## 📚 Phase 3 documentation\n\nSee the linked guides above for the implementation hierarchy, local setup, security verification steps, and project trade-offs.\n\n## 🔮 Future Scope
 
 * 🤖 AI-Based Health Anomaly Detection
 * 🚨 Emergency Alerts
