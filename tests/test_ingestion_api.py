@@ -45,10 +45,11 @@ def valid_body() -> bytes:
 
 def test_signed_reading_is_stored_and_requires_separate_read_token(tmp_path):
     client = make_client(tmp_path)
+    body = valid_body()
     response = client.post(
         "/api/v1/readings",
-        content=valid_body(),
-        headers=signed_headers(valid_body(), "nonce-valid-00000001"),
+        content=body,
+        headers=signed_headers(body, "nonce-valid-00000001"),
     )
     assert response.status_code == 201
     assert response.json()["status"] == "accepted"
