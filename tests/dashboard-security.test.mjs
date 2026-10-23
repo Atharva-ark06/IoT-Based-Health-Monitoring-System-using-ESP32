@@ -30,6 +30,8 @@ test('untrusted timestamp content is escaped before insertion into the table', (
 test('correlation uses temperature and BPM from the same complete rows', () => {
   assert.match(dashboard, /const pairedReadings = sensorData\.filter\(d => d\.temperature > 0 && d\.bpm > 0\)/);
   assert.match(dashboard, /calculateCorrelation\(pairedTemps, pairedBpms\)/);
+  assert.match(dashboard, /generateClinicalInsights\(temps, bpms, pairedTemps, pairedBpms\)/);
+  assert.doesNotMatch(dashboard, /calculateCorrelation\(temps\.slice\(0, minLength\), bpms\.slice\(0, minLength\)\)/);
 });
 
 test('raw imported health readings are not logged to the browser console', () => {
