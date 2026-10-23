@@ -31,6 +31,7 @@ test('correlation uses temperature and BPM from the same complete rows', () => {
   assert.match(dashboard, /const pairedReadings = sensorData\.filter\(d => d\.temperature > 0 && d\.bpm > 0\)/);
   assert.match(dashboard, /calculateCorrelation\(pairedTemps, pairedBpms\)/);
   assert.match(dashboard, /generateClinicalInsights\(temps, bpms, pairedTemps, pairedBpms\)/);
+  assert.match(dashboard, /const scatterData = pairedReadings\.map\(reading => \(\{/);
   assert.doesNotMatch(dashboard, /calculateCorrelation\(temps\.slice\(0, minLength\), bpms\.slice\(0, minLength\)\)/);
 });
 
