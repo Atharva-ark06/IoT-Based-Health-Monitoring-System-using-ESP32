@@ -24,7 +24,7 @@ Temperature and heart-rate readings can be sensitive personal data. Treat real r
 | Script injection | A timestamp in imported CSV contains HTML or script markup | Render imported values as text or HTML-escape them before inserting markup |
 | Malformed or incomplete readings | Missing fields or non-numeric values skew analytics | Validate readings and calculate paired metrics only from complete pairs |
 | Transport interception | Data source is fetched over cleartext HTTP | Require HTTPS for remote sources |
-| Unauthorized device writes | An unauthenticated device submits forged readings | Not implemented: this repo currently has no backend ingestion API or firmware source |
+| Unauthorized device writes | An unauthenticated device submits forged readings | The API requires HMAC-SHA256 signatures, a five-minute timestamp window, and single-use nonces; firmware/key provisioning remains absent |
 | Embedded credential exposure | Wi-Fi password or API token is committed | Keep credentials out of source control; use local configuration and server-side secrets where applicable |
 | Dependency compromise | Third-party scripts change or become unavailable | Pin dependency versions, review upgrades, and consider self-hosting/integrity controls before production use |
 
@@ -33,6 +33,12 @@ Temperature and heart-rate readings can be sensitive personal data. Treat real r
 The dashboard reads its CSV source from the `sensor-data-url` meta tag in the HTML. Set its content to an HTTPS CSV URL only when you have deliberately configured the source for the intended audience. The URL is visible to every dashboard visitor; never use it to carry a secret or to grant access to private data.
 
 If the source is not configured, the dashboard should remain idle and explain how to configure it instead of silently requesting a repository-maintained spreadsheet.
+
+## Ingestion API security boundary
+
+The optional API in `backend/app.py` authenticates write requests with HMAC-SHA256 over the timestamp, nonce, and exact request body. It rejects timestamps outside a five-minute window, duplicate nonces, unexpected fields, out-of-range readings, and oversized payloads. Reading retrieval requires a separate bearer token. The service does not enable CORS, and its read token must never be embedded in the static dashboard.
+
+This does **not** replace TLS: deploy behind HTTPS or keep the service on a private network. The API does not implement device enrollment, per-device secrets, encrypted-at-rest storage, a production rate limiter, user accounts, or firmware-side HMAC signing. SQLite is not encrypted by this application. Do not use real health data until those deployment and privacy requirements are addressed.
 
 ## Before using real data
 
