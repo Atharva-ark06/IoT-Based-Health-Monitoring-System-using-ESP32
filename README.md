@@ -71,10 +71,15 @@ This project uses an **ESP32** to collect health-related sensor data, process it
 ## 📁 Repository Structure
 
 ```text
+├── backend/
+│   ├── app.py
+│   └── requirements.txt
 ├── health/
 │   └── sensor_dashboard.html
 ├── tests/
-│   └── dashboard-security.test.mjs
+│   ├── dashboard-security.test.mjs
+│   └── test_ingestion_api.py
+├── .github/workflows/
 ├── README.md
 └── SECURITY.md
 ```
@@ -109,6 +114,38 @@ cd IoT-Based-Health-Monitoring-System-using-ESP32
 > **Firmware note:** The repository currently does not include an `.ino` firmware file, so the ESP32 hardware upload steps cannot be reproduced from the checked-in source alone.
 
 ---
+
+## 🔒 Authenticated ingestion API (Phase 2)
+
+A small FastAPI service is available in `backend/app.py`. It accepts signed device submissions and protects reading retrieval with a separate bearer token. It is an API building block, not yet connected to the absent ESP32 firmware or the static dashboard.
+
+### Run locally
+
+Use Python 3.11+ and a virtual environment:
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+
+# Generate separate, random secrets; keep them out of Git.
+$env:IOT_DEVICE_HMAC_SECRET = (python -c "import secrets; print(secrets.token_hex(32))")
+$env:IOT_READ_API_TOKEN = (python -c "import secrets; print(secrets.token_urlsafe(32))")
+$env:IOT_DATABASE_PATH = "data/readings.sqlite3"
+
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+- `GET /healthz` is a minimal health check.
+- `POST /api/v1/readings` requires `X-Device-Timestamp`, `X-Device-Nonce`, and `X-Device-Signature` headers. The signature is lowercase/uppercase-insensitive hexadecimal HMAC-SHA256 over the exact bytes `timestamp + "." + nonce + "." + raw_request_body`, keyed with `IOT_DEVICE_HMAC_SECRET`. Timestamps older than five minutes are rejected and nonces cannot be reused.
+- `GET /api/v1/readings?limit=100` requires `Authorization: Bearer <IOT_READ_API_TOKEN>`. Keep this token in a trusted client or server; **never embed it in browser JavaScript or the static dashboard**.
+- Payload fields: `device_id` (letters, digits, underscore, hyphen; up to 64 chars), timezone-aware ISO-8601 `timestamp`, `temperature` (-20 to 80 °C), and `bpm` (20 to 250). Extra fields are rejected.
+- Run tests with `python -m pip install -r backend/requirements.txt` followed by `python -m pytest -q tests/test_ingestion_api.py`.
+
+### Deployment boundary
+
+The API does not terminate TLS itself. Expose it only through HTTPS on a trusted reverse proxy or private network; do not port-forward the development server directly to the internet. Configure secrets using your deployment platform's secret manager. The database stores readings in SQLite and is not encrypted at rest by this code. Add a managed encrypted database, backups, retention policy, monitoring, and per-device key provisioning before any real health data is used. The current repository still lacks firmware, so device-side signing and secure key storage are not yet implemented.
 
 ## 🔐 Security and privacy
 
