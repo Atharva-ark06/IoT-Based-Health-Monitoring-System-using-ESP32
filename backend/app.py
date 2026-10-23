@@ -109,7 +109,11 @@ def create_app(
 
         if not x_device_timestamp or not x_device_nonce or not x_device_signature:
             raise HTTPException(status_code=401, detail="Missing device authentication headers")
-        if not x_device_timestamp.isascii() or not x_device_timestamp.isdigit():
+        if (
+            not x_device_timestamp.isascii()
+            or not x_device_timestamp.isdigit()
+            or len(x_device_timestamp) > 12
+        ):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
         if not NONCE_PATTERN.fullmatch(x_device_nonce):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
@@ -118,6 +122,10 @@ def create_app(
         sent_at = int(x_device_timestamp)
         if abs(now - sent_at) > SIGNATURE_WINDOW_SECONDS:
             raise HTTPException(status_code=401, detail="Expired device request")
+
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Request body too large")
 
         body = await request.body()
         if len(body) > MAX_BODY_BYTES:
