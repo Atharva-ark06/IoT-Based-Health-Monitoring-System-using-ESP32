@@ -219,26 +219,23 @@ def create_app(
         if start_utc and end_utc and start_utc > end_utc:
             raise HTTPException(status_code=422, detail="start must be earlier than or equal to end")
 
-        clauses: list[str] = []
-        parameters: list[object] = []
-        if device_id:
-            clauses.append("device_id = ?")
-            parameters.append(device_id)
-        if start_utc:
-            clauses.append("timestamp >= ?")
-            parameters.append(start_utc)
-        if end_utc:
-            clauses.append("timestamp <= ?")
-            parameters.append(end_utc)
-        where_clause = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        parameters.append(limit)
+        # Keep SQL static and bind every user-controlled filter as a parameter.
+        parameters: list[object] = [
+            device_id, device_id,
+            start_utc, start_utc,
+            end_utc, end_utc,
+            limit,
+        ]
 
         try:
             with _connect(database) as connection:
                 rows = connection.execute(
-                    f"""
+                    """
                     SELECT id, device_id, timestamp, temperature, bpm, received_at
-                    FROM readings{where_clause}
+                    FROM readings
+                    WHERE (? IS NULL OR device_id = ?)
+                      AND (? IS NULL OR timestamp >= ?)
+                      AND (? IS NULL OR timestamp <= ?)
                     ORDER BY timestamp DESC, id DESC
                     LIMIT ?
                     """,
