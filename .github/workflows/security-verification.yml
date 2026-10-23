@@ -1,24 +1,8 @@
-# Phase 3 — Security verification workflow
-
 name: Security verification
 
 on:
   push:
-    paths:
-      - "backend/**"
-      - "tests/**"
-      - "health/**"
-      - "docs/**"
-      - "SECURITY.md"
-      - ".github/workflows/**"
   pull_request:
-    paths:
-      - "backend/**"
-      - "tests/**"
-      - "health/**"
-      - "docs/**"
-      - "SECURITY.md"
-      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
