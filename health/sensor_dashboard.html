@@ -560,7 +560,7 @@
                 correlation: calculateCorrelation(pairedTemps, pairedBpms),
                 health: assessHealth(sensorData[sensorData.length - 1], temps, bpms),
                 riskAssessment: performRiskAssessment(temps, bpms),
-                clinicalInsights: generateClinicalInsights(temps, bpms),
+                clinicalInsights: generateClinicalInsights(temps, bpms, pairedTemps, pairedBpms),
                 dataQuality: assessDataQuality()
             };
 
@@ -803,7 +803,7 @@ function calculateCorrelation(temps, bpms) {
             return assessment;
         }
 
-function generateClinicalInsights(temps, bpms) {
+function generateClinicalInsights(temps, bpms, pairedTemps = [], pairedBpms = []) {
     const insights = [];
 
     if (temps.length === 0 && bpms.length === 0) {
@@ -880,10 +880,10 @@ function generateClinicalInsights(temps, bpms) {
         });
     }
 
-    // Correlation insights
-    const minLength = Math.min(temps.length, bpms.length);
+    // Correlation insights use only paired readings from the same source rows.
+    const minLength = Math.min(pairedTemps.length, pairedBpms.length);
     if (minLength >= 5) {
-        const correlation = calculateCorrelation(temps.slice(0, minLength), bpms.slice(0, minLength));
+        const correlation = calculateCorrelation(pairedTemps, pairedBpms);
         
         if (Math.abs(correlation) > 0.7) {
             insights.push({
