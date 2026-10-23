@@ -1249,15 +1249,11 @@ function generateClinicalInsights(temps, bpms, pairedTemps = [], pairedBpms = []
                 correlationChart.destroy();
             }
 
-            const temps = sensorData.map(d => d.temperature).filter(t => t > 0);
-            const bpms = sensorData.map(d => d.bpm).filter(b => b > 0);
-            
-            const minLength = Math.min(temps.length, bpms.length);
-            const scatterData = [];
-            
-            for (let i = 0; i < minLength; i++) {
-                scatterData.push({ x: temps[i], y: bpms[i] });
-            }
+            const pairedReadings = sensorData.filter(d => d.temperature > 0 && d.bpm > 0);
+            const scatterData = pairedReadings.map(reading => ({
+                x: reading.temperature,
+                y: reading.bpm
+            }));
 
             correlationChart = new Chart(ctx, {
                 type: 'scatter',
