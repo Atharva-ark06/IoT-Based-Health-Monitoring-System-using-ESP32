@@ -6,8 +6,8 @@ or expose credentials to the browser dashboard.
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import hmac
-import json
 import os
 import re
 import secrets
@@ -128,9 +128,8 @@ def create_app(
             raise HTTPException(status_code=401, detail="Invalid device authentication")
 
         try:
-            payload = json.loads(body)
-            reading = Reading.model_validate(payload)
-        except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, TypeError):
+            reading = Reading.model_validate_json(body)
+        except (ValidationError, UnicodeDecodeError, TypeError):
             raise HTTPException(status_code=422, detail="Invalid reading payload") from None
 
         # Normalize timestamps to UTC so comparisons and retention are consistent.
@@ -140,7 +139,7 @@ def create_app(
         normalized_timestamp = timestamp.astimezone(timezone.utc).isoformat()
 
         try:
-            with _connect(database) as connection:
+            with closing(_connect(database)) as connection, connection:
                 connection.execute(
                     "DELETE FROM used_nonces WHERE seen_at < ?",
                     (now - SIGNATURE_WINDOW_SECONDS * 2,),
