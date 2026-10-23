@@ -440,7 +440,9 @@
     </div>
 
     <script>
-        const GOOGLE_SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/1vyV0RpBOaTAM0d76as9NuBuNelb2dreuvQ9dgwOCSTo/export?format=csv&gid=0';
+        // Configure this only with an intentionally accessible HTTPS CSV endpoint.
+        // The URL is visible to visitors; never put credentials or private data access tokens here.
+        const SENSOR_DATA_URL = document.querySelector('meta[name="sensor-data-url"]')?.content.trim() || '';
 
         let sensorData = [];
         let analytics = null;
@@ -455,12 +457,34 @@
         });
 
         async function loadData() {
+            const sourceUrl = SENSOR_DATA_URL;
+            if (!sourceUrl) {
+                updateStatus('error', 'Data source not configured');
+                showError('No data source configured. Set the sensor-data-url meta tag to an HTTPS CSV endpoint that is safe for the intended audience.');
+                return;
+            }
+
+            let parsedSource;
+            try {
+                parsedSource = new URL(sourceUrl, window.location.href);
+            } catch {
+                updateStatus('error', 'Invalid data source');
+                showError('The configured data source URL is invalid.');
+                return;
+            }
+
+            if (parsedSource.protocol !== 'https:') {
+                updateStatus('error', 'Insecure data source');
+                showError('For security, the dashboard only loads remote CSV data over HTTPS.');
+                return;
+            }
+
             showLoading(true);
             updateStatus('loading', 'Loading data...');
             hideError();
 
             try {
-                const response = await fetch(GOOGLE_SHEETS_CSV_URL);
+                const response = await fetch(parsedSource.href, { credentials: 'omit', referrerPolicy: 'no-referrer' });
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -493,7 +517,7 @@
         }
 
         function processData(rawData) {
-            console.log('Processing data...', rawData);
+            // Do not log imported health readings to the browser console.
             
             sensorData = rawData
                 .map((row, index) => {
@@ -503,8 +527,8 @@
                     return {
                         id: index + 1,
                         timestamp: row.A || row.B || row.Timestamp || new Date().toLocaleString(),
-                        temperature: isNaN(temp) ? 0 : temp,
-                        bpm: isNaN(bpm) ? 0 : bpm
+                        temperature: Number.isFinite(temp) ? temp : 0,
+                        bpm: Number.isFinite(bpm) ? bpm : 0
                     };
                 })
                 .filter(row => row.temperature > 0 || row.bpm > 0);
@@ -525,14 +549,15 @@
         function analyzeData() {
             const temps = sensorData.map(d => d.temperature).filter(t => t > 0);
             const bpms = sensorData.map(d => d.bpm).filter(b => b > 0);
-
-            console.log('Temperature data points:', temps.length);
-            console.log('BPM data points:', bpms.length);
+            // Correlation requires paired observations from the same source rows.
+            const pairedReadings = sensorData.filter(d => d.temperature > 0 && d.bpm > 0);
+            const pairedTemps = pairedReadings.map(d => d.temperature);
+            const pairedBpms = pairedReadings.map(d => d.bpm);
 
             analytics = {
                 temperature: analyzeMetric(temps, 'temperature'),
                 bpm: analyzeMetric(bpms, 'bpm'),
-                correlation: calculateCorrelation(temps, bpms),
+                correlation: calculateCorrelation(pairedTemps, pairedBpms),
                 health: assessHealth(sensorData[sensorData.length - 1], temps, bpms),
                 riskAssessment: performRiskAssessment(temps, bpms),
                 clinicalInsights: generateClinicalInsights(temps, bpms),
@@ -1394,6 +1419,16 @@ function generateClinicalInsights(temps, bpms) {
             });
         }
 
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character]);
+        }
+
         function renderDataTable() {
             const tbody = document.getElementById('dataTableBody');
             const recentData = sensorData.slice(-20).reverse();
@@ -1410,7 +1445,7 @@ function generateClinicalInsights(temps, bpms) {
                 return `
                     <tr>
                         <td>${row.id}</td>
-                        <td>${row.timestamp}</td>
+                        <td>${escapeHtml(row.timestamp)}</td>
                         <td>${row.temperature.toFixed(1)}°C</td>
                         <td>${row.bpm > 0 ? row.bpm.toFixed(0) : 'N/A'}</td>
                         <td>${overallStatus}</td>
