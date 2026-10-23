@@ -68,23 +68,18 @@ This project uses an **ESP32** to collect health-related sensor data, process it
 
 ---
 
-## 📁 Project Structure
+## 📁 Repository Structure
 
 ```text
-IoT-Based-Health-Monitoring-System-using-ESP32/
-│
-├── 📂 health/
-│   ├── 📄 sensor_dashboard.html
-│   └── 📄 ESP32_Health_Monitoring.ino
-│
-├── 📂 PBL Reports & Documentation/
-│   └── 📄 Project Report.pdf
-│
-├── 📂 Project Presentations/
-│   └── 📄 IoT Health Monitoring Presentation.pptx
-│
-└── 📄 README.md
+├── health/
+│   └── sensor_dashboard.html
+├── tests/
+│   └── dashboard-security.test.mjs
+├── README.md
+└── SECURITY.md
 ```
+
+Project reports and presentations are also stored at the repository root. The ESP32 firmware file mentioned in earlier documentation is not currently present in this repository.
 
 ---
 
@@ -99,15 +94,31 @@ git clone https://github.com/Atharva-ark06/IoT-Based-Health-Monitoring-System-us
 cd IoT-Based-Health-Monitoring-System-using-ESP32
 ```
 
-1. Open the ESP32 code in **Arduino IDE**.
-2. Install the required ESP32 board package and libraries.
-3. Connect the sensors and add your Wi-Fi credentials.
-4. Select the ESP32 board and COM port.
-5. Upload the code and monitor the readings.
+1. Open `health/sensor_dashboard.html` in a browser or serve it from a local/static web server.
+2. Configure the CSV source by adding a `sensor-data-url` meta tag inside the HTML `<head>`. For example:
 
-> 🔐 Never upload Wi-Fi passwords, API keys, or private credentials to GitHub.
+   ```html
+   <meta name="sensor-data-url" content="https://example.com/readings.csv">
+   ```
+
+3. Replace the example URL with an HTTPS CSV endpoint that is intentionally accessible to the dashboard's intended audience. The URL is public to visitors; do not include credentials or access tokens.
+4. The CSV should provide a timestamp column and temperature/BPM columns. The dashboard supports common header names such as `Timestamp`, `Temperature`, and `BPM`, as well as the existing positional columns.
+
+> **Security:** Do not publish Wi-Fi passwords, API keys, bearer tokens, or private credentials. Avoid connecting real health readings to a public spreadsheet. Read [SECURITY.md](SECURITY.md) before configuring a source.
+
+> **Firmware note:** The repository currently does not include an `.ino` firmware file, so the ESP32 hardware upload steps cannot be reproduced from the checked-in source alone.
 
 ---
+
+## 🔐 Security and privacy
+
+- The dashboard no longer embeds a specific Google Sheets export URL.
+- Remote CSV loading requires HTTPS and omits browser credentials and referrer information.
+- Imported timestamps are escaped before being rendered in the table.
+- Temperature/BPM correlation is calculated only from paired readings from the same rows.
+- Basic regression checks are available with Node.js: `node --test tests/dashboard-security.test.mjs`.
+
+These changes improve browser-side handling but do not provide device authentication, server-side access control, or a secure ingestion API. Do not treat this prototype as production-ready for personal health data. See [SECURITY.md](SECURITY.md) for the threat model and deployment guidance.
 
 ## 🔮 Future Scope
 
