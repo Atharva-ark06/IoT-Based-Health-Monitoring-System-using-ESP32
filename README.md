@@ -14,7 +14,7 @@ An educational IoT prototype for collecting temperature and heart-rate readings,
 - Dashboard requests are same-origin, login/logout enforce the configured Origin, and responses set restrictive security headers.
 - A hardware-free simulator signs and posts synthetic readings using the same request format as the API.
 - An ESP32 Arduino integration scaffold demonstrates HTTPS, CA certificate validation, NTP time synchronization, HMAC request signing, and secret separation.
-- CI runs Python tests, dashboard regression tests, Bandit, and pip-audit.
+- CI runs Python tests, dashboard regression tests, Bandit, pip-audit, and a hardware-free ESP32 firmware compile job.
 
 ## Architecture
 
@@ -111,6 +111,7 @@ simulator/
 tests/
   test_ingestion_api.py
   test_device_simulator.py
+  test_firmware_readiness.py
   test_dashboard_auth.py
   dashboard-security.test.mjs
   dashboard-integration.test.mjs
@@ -132,7 +133,7 @@ The firmware sketch defaults to a DHT11 temperature sensor on GPIO 4 as an examp
 
 - [Setup guide](docs/SETUP.md)
 - [Architecture and data flow](docs/ARCHITECTURE.md)
-- [Firmware integration](docs/FIRMWARE.md)
+- [Firmware integration and build readiness](docs/FIRMWARE.md)
 - [End-to-end integration tests](docs/INTEGRATION-TESTING.md)
 - [Security verification checklist](docs/SECURITY-VERIFICATION.md)
 - [Threat model and reporting](SECURITY.md)
@@ -142,7 +143,7 @@ The firmware sketch defaults to a DHT11 temperature sensor on GPIO 4 as an examp
 
 - This is an academic prototype, not a medical device, diagnostic service, or emergency alert system.
 - Synthetic readings are for integration testing only.
-- Physical sensor wiring, calibration, firmware compilation, TLS certificate selection, and device-side behavior still require hardware-specific verification.
+- CI compiles the ESP32 sketch using placeholder configuration; physical sensor wiring, calibration, TLS certificate selection, and device-side behavior still require hardware-specific verification.
 - HMAC authenticates requests; it does not encrypt traffic. Use HTTPS.
 - The dashboard password/session mechanism is a prototype; add proxy-level rate limiting, monitoring, managed secret storage, backups, retention policies, and a production identity/access strategy before real deployment.
 - SQLite data is not encrypted at rest by this application. Avoid using real personal health data until privacy and operational controls are reviewed.
