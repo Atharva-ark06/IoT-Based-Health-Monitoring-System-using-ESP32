@@ -1,92 +1,102 @@
 # Setup Guide
 
-This guide runs the existing static dashboard and the optional authenticated API locally. It does not configure a real ESP32 end-to-end: the firmware `.ino` source and device-side signing implementation are not currently in the repository.
+This guide runs the authenticated API, API-backed dashboard, and synthetic device simulator locally. It also documents the current limits of the ESP32 firmware scaffold. No physical hardware test is implied.
 
 ## Requirements
 
 - Git
 - Python 3.11 or newer
-- Node.js 20+ (only for dashboard regression tests)
+- Node.js 20+ for dashboard regression tests
 - A modern browser
 
 ## 1. Clone and prepare Python
 
 Windows PowerShell:
 
-```powershell
+~~~powershell
 git clone https://github.com/Atharva-ark06/IoT-Based-Health-Monitoring-System-using-ESP32.git
 cd IoT-Based-Health-Monitoring-System-using-ESP32
-
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r backend/requirements.txt
-```
+~~~
 
-If PowerShell blocks activation, use a permitted local environment policy or invoke the venv interpreter directly with `.\.venv\Scripts\python.exe`; do not weaken machine-wide execution policy just for this project.
+If PowerShell blocks activation, invoke the venv interpreter directly with .\.venv\Scripts\python.exe instead of weakening machine-wide execution policy.
 
-## 2. Configure local API secrets
+## 2. Configure local development secrets
 
-Create independent random values for device signing and read access. Keep them in the current shell only; do not paste them into source files or commit them.
+Generate separate values in the same PowerShell session that will run the API. Do not commit or paste these into HTML, source code, screenshots, or issue reports.
 
-```powershell
+~~~powershell
 $env:IOT_DEVICE_HMAC_SECRET = (python -c "import secrets; print(secrets.token_hex(32))")
 $env:IOT_READ_API_TOKEN = (python -c "import secrets; print(secrets.token_urlsafe(32))")
+$env:IOT_DASHBOARD_PASSWORD = (python -c "import secrets; print(secrets.token_urlsafe(32))")
+$env:IOT_SESSION_SECRET = (python -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:IOT_DASHBOARD_ORIGIN = "http://127.0.0.1:8000"
+$env:IOT_COOKIE_SECURE = "false"
 $env:IOT_DATABASE_PATH = "data/readings.sqlite3"
-```
+~~~
 
-Start the API bound to loopback:
+IOT_COOKIE_SECURE=false is allowed only for loopback-only local HTTP testing. A deployed HTTPS environment must use secure cookies, an HTTPS origin, and secrets stored in the deployment platform's secret manager.
 
-```powershell
+Start the API:
+
+~~~powershell
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
-```
+~~~
 
-In a second terminal, check service health:
+In a second terminal, verify the health endpoint:
 
-```powershell
+~~~powershell
 Invoke-RestMethod http://127.0.0.1:8000/healthz
-```
+~~~
 
-Expected response:
+Expected response: {"status":"ok"}.
 
-```json
-{"status":"ok"}
-```
+## 3. Exercise the signed ingestion path
 
-The read endpoint requires the separate bearer token:
+In the second terminal, activate the venv and set IOT_DEVICE_HMAC_SECRET to the exact same device secret generated in step 2. If you generated a new value in the second terminal, the API will reject the signature.
 
-```powershell
-$headers = @{ Authorization = "Bearer $env:IOT_READ_API_TOKEN" }
-Invoke-RestMethod "http://127.0.0.1:8000/api/v1/readings?limit=20" -Headers $headers
-```
+~~~powershell
+$env:IOT_DEVICE_HMAC_SECRET = "paste-the-same-local-device-secret-here"
+python -m simulator.device_simulator --count 5 --interval 1
+~~~
 
-A fresh database returns an empty readings list. The write endpoint intentionally rejects unsigned requests; this repository does not yet provide a production device-side signing client.
+The simulator sends synthetic temperature/BPM values to the loopback API. It uses the same timestamp, nonce, and raw-body HMAC scheme expected from a device. It refuses non-HTTPS URLs except for localhost/loopback development.
 
-## 3. Run the automated checks
+## 4. View readings in the integrated dashboard
 
-From the repository root, with the virtual environment active:
+Open http://127.0.0.1:8000/dashboard. Enter the IOT_DASHBOARD_PASSWORD value generated in step 2. The browser receives a short-lived HttpOnly, SameSite=Strict session cookie. It never receives the server-side IOT_READ_API_TOKEN.
 
-```powershell
-python -m pytest -q tests/test_ingestion_api.py
-node --test tests/dashboard-security.test.mjs
-```
+The dashboard reads recent history through /api/v1/dashboard/readings and can be refreshed manually. The separate /api/v1/readings endpoint remains available to trusted non-browser clients with the bearer token.
 
-The GitHub Actions security workflow additionally runs Bandit and pip-audit. Local success is not a substitute for checking the CI result for the exact commit you intend to merge.
+## 5. API authentication model
 
-## 4. Open the existing dashboard
+- POST /api/v1/readings requires X-Device-Timestamp, X-Device-Nonce, and X-Device-Signature.
+- The HMAC-SHA256 signature covers exact bytes: unix_timestamp + "." + nonce + "." + raw_json_body.
+- Requests outside the five-minute time window, repeated nonces, invalid payloads, and oversized bodies are rejected.
+- GET /api/v1/readings uses the separate IOT_READ_API_TOKEN.
+- Dashboard login uses IOT_DASHBOARD_PASSWORD and signs a short-lived cookie with IOT_SESSION_SECRET.
+- Dashboard login/logout require the Origin header to match IOT_DASHBOARD_ORIGIN.
+- Set IOT_COOKIE_SECURE=true behind HTTPS. Do not expose the development server directly to the internet.
 
-Open `health/sensor_dashboard.html` in a browser, or serve it using a local/static web server. The dashboard uses an HTTPS CSV source configured through a `sensor-data-url` meta tag in its HTML `<head>`, for example:
+## 6. Run automated checks
 
-```html
-<meta name="sensor-data-url" content="https://your-approved-host.example/readings.csv">
-```
+~~~powershell
+python -m pytest -q tests
+node --test tests/*.test.mjs
+python -m pip install bandit pip-audit
+bandit -q -r backend -ll
+pip-audit
+~~~
 
-Use only a source that is intentionally accessible to the dashboard audience. The URL is visible to anyone who can view the HTML. Do not use a private spreadsheet export or put a bearer token in the URL. The existing dashboard is **not connected** to the authenticated API; its read token must never be embedded in browser JavaScript.
+GitHub Actions runs the Python tests, Node dashboard tests, Bandit, and pip-audit on pushes and pull requests. Check the run attached to the exact commit SHA.
 
-## 5. Hardware setup status
+## 7. Firmware status
 
-The project description references ESP32, DHT11, and a heart-rate sensor, but no firmware source is currently checked in. Therefore pin assignments, sensor library versions, calibration, Wi-Fi configuration, and the device-side HMAC algorithm cannot be verified from this repository. Do not wire a device to real health-data infrastructure until firmware, key provisioning, TLS validation, and end-to-end tests have been reviewed.
+The checked-in sketch demonstrates Wi-Fi, NTP, certificate-validated HTTPS, and HMAC signing. It includes a DHT11 example on GPIO 4, but the heart-rate adapter deliberately returns an invalid sample until the actual sensor model and library are confirmed. As a result, it will not submit invented BPM values. See FIRMWARE.md for the setup and remaining hardware-specific work.
 
-## Safe teardown
+## Teardown
 
-Stop Uvicorn with Ctrl+C. Close the PowerShell sessions holding the temporary environment variables. Treat any value exposed in a screenshot, issue, or terminal log as compromised and rotate it.
+Stop the API with Ctrl+C. Close the terminals containing environment variables when finished. Remove the local data directory if you want to discard synthetic test readings. Rotate any secret that was copied to a public location.
