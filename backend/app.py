@@ -208,7 +208,9 @@ def create_app(
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise HTTPException(status_code=400, detail="Invalid login request") from None
         password = credentials.get("password") if isinstance(credentials, dict) else None
-        if not isinstance(password, str) or not secrets.compare_digest(\n            configured_dashboard_password.encode("utf-8"), password.encode("utf-8")\n        ):
+        if not isinstance(password, str) or not secrets.compare_digest(
+            configured_dashboard_password.encode("utf-8"), password.encode("utf-8")
+        ):
             raise HTTPException(status_code=401, detail="Invalid dashboard credentials")
 
         response.set_cookie(
@@ -289,7 +291,9 @@ def create_app(
         body = await _read_limited_body(request, MAX_BODY_BYTES)
 
         expected = _signature(secret, x_device_timestamp, x_device_nonce, body)
-        if not re.fullmatch(r"[0-9a-fA-F]{64}", x_device_signature) or not hmac.compare_digest(\n            expected, x_device_signature.lower()\n        ):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", x_device_signature) or not hmac.compare_digest(
+            expected, x_device_signature.lower()
+        ):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
         try:
             reading = Reading.model_validate_json(body)
