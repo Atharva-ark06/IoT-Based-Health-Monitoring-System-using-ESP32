@@ -37,7 +37,7 @@ class FirmwareReadinessTests(unittest.TestCase):
             "X-Device-Nonce",
             "X-Device-Signature",
         ):
-            self.assertIn(f'\\"{header}\\"', self.sketch)
+            self.assertIn(f'"{header}"', self.sketch)
 
     def test_secret_template_contains_placeholders_not_credentials(self):
         for placeholder in (
