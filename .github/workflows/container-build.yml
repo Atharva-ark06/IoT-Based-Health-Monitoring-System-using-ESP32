@@ -38,4 +38,11 @@ jobs:
         run: docker build --tag iot-health-monitoring:ci .
 
       - name: Validate Compose configuration
+        env:
+          # Validation-only placeholders; never used to start or deploy the service.
+          IOT_DEVICE_HMAC_SECRET: ci-placeholder-device-secret
+          IOT_READ_API_TOKEN: ci-placeholder-read-token
+          IOT_DASHBOARD_PASSWORD: ci-placeholder-dashboard-password
+          IOT_SESSION_SECRET: ci-placeholder-session-secret-32-chars-minimum
+          IOT_DASHBOARD_ORIGIN: https://dashboard.example.invalid
         run: docker compose config --quiet
