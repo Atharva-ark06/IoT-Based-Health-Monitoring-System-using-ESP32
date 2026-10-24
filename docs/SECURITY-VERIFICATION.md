@@ -15,7 +15,7 @@ bandit -q -r backend -ll
 pip-audit
 ~~~
 
-GitHub Actions runs the Python API/session/integration and firmware-readiness tests, Node dashboard regression tests, Bandit, and pip-audit. A separate firmware workflow compiles the ESP32 sketch for a generic ESP32 target using placeholder configuration. The container workflow builds the Docker image and validates the Compose configuration. Review all relevant workflow runs for the exact pull-request head SHA.
+GitHub Actions runs the Python API/session/integration/operations tests, Node dashboard regression tests, Bandit, and pip-audit. A separate firmware workflow compiles the ESP32 sketch for a generic ESP32 target using placeholder configuration. The container workflow builds the Docker image and validates the Compose configuration. Review all relevant workflow runs for the exact pull-request head SHA.
 
 ## API/device tests
 
@@ -23,6 +23,9 @@ GitHub Actions runs the Python API/session/integration and firmware-readiness te
 - Missing headers, invalid signatures, stale timestamps, replayed nonces, malformed payloads, extra fields, invalid ranges, naive timestamps, and oversized bodies rejected.
 - Separate bearer-token access is required for the trusted-client history route.
 - The hardware-free simulator generates the same signed request shape and is tested against the FastAPI TestClient.
+- Per-device key mapping rejects unknown IDs when `IOT_DEVICE_SECRETS_JSON` is configured.
+- Login throttling returns HTTP 429 with `Retry-After` when the configured in-process limit is exceeded.
+- Readiness checks the database; audit metadata excludes credentials and reading values; audit reads require `IOT_MAINTENANCE_TOKEN`.
 
 ## Dashboard tests
 
@@ -51,6 +54,13 @@ GitHub Actions runs the Python API/session/integration and firmware-readiness te
 - Build with the Arduino toolchain and run on hardware.
 - Confirm HTTPS certificate validation, time synchronization, signed ingestion, reconnect behavior, and duplicate/replay rejection on the live device.
 
+## Resilience and retention checks
+
+- Simulator retries only transient network failures, HTTP 429, and HTTP 5xx, with bounded exponential backoff; permanent 4xx responses are not retried.
+- SQLite maintenance tests cover backup creation, refusal to overwrite a backup, retention preview, and opt-in pruning.
+- The maintenance CLI requires `--backup-path` for `--apply`; retention defaults are examples and must be approved for the actual data policy.
+- Retries are not exactly-once delivery. A response lost after commit can still produce a duplicate reading; no exactly-once guarantee is claimed.
+
 ## Container configuration checks
 
 - Automated tests check the image runs as a non-root user and defines a health check.
@@ -63,7 +73,7 @@ GitHub Actions runs the Python API/session/integration and firmware-readiness te
 
 - Confirm the API is behind HTTPS and the dev server is not exposed directly.
 - Set IOT_COOKIE_SECURE=true and IOT_DASHBOARD_ORIGIN to the exact HTTPS origin.
-- Use strong, unique values for IOT_DASHBOARD_PASSWORD, IOT_SESSION_SECRET, IOT_DEVICE_HMAC_SECRET, and IOT_READ_API_TOKEN.
-- Add login rate limiting and security monitoring at the reverse proxy or application layer.
+- Use strong, unique values for IOT_DASHBOARD_PASSWORD, IOT_SESSION_SECRET, IOT_READ_API_TOKEN, IOT_MAINTENANCE_TOKEN, and each per-device key in IOT_DEVICE_SECRETS_JSON. Keep IOT_DEVICE_HMAC_SECRET only for legacy/local demos.
+- Add distributed rate limiting and security monitoring at the reverse proxy or application layer; in-process buckets are not shared across workers.
 - Review storage access, encryption at rest, backups, retention, privacy, and authorized access before real personal data is used.
 - Verify that no secrets or real sensor readings are present in Git history, logs, screenshots, or CI artifacts.

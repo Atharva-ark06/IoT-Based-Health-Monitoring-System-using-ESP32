@@ -1,8 +1,8 @@
-# Project Analysis — Phase 7
+# Project Analysis — Phases 6–10
 
 ## Project summary
 
-The project is an educational IoT health-monitoring prototype with a FastAPI ingestion API, SQLite storage, a session-protected API dashboard, a synthetic device simulator, and an ESP32 firmware scaffold. The simulator → signed API → database → authenticated dashboard flow is covered by automated tests. Phase 6 adds an Arduino CLI compile workflow and static firmware-readiness tests. Phase 7 adds a non-root container image, a hardened Compose template, deployment guidance, configuration tests, and a CI image build.
+The project is an educational IoT health-monitoring prototype with a FastAPI ingestion API, SQLite storage, a session-protected API dashboard, a synthetic device simulator, and an ESP32 firmware scaffold. The simulator → signed API → database → authenticated dashboard flow is covered by automated tests. Phase 6 adds an Arduino CLI compile workflow and static firmware-readiness tests. Phase 7 adds a non-root container image and hardened Compose template. Phases 8–10 add per-device HMAC key mapping, in-process rate limits, readiness checks, metadata-only audit events, an authenticated audit endpoint, bounded simulator retry/backoff, and backup-before-delete SQLite retention tooling. README and operations/security documentation are updated.
 
 **Important boundary:** the ESP32 sketch is not hardware-verified. The heart-rate adapter intentionally remains unfinished until the exact sensor model and library are confirmed. Synthetic data verifies the software protocol path, not physical sensors or medical accuracy.
 
@@ -12,14 +12,14 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 | --- | --- | --- |
 | Simulator | HMAC-signed synthetic readings sent to the API | Synthetic values are not sensor readings; no physical device involved |
 | Firmware | Wi-Fi, NTP, CA-validated HTTPS, HMAC request signing scaffold; automated generic ESP32 compile job and static readiness tests | Exact hardware, wiring, heart-rate algorithm, live certificate, and device upload need verification |
-| Integrated dashboard | Same-origin page with password login and session-protected history | Prototype login; rate limiting, production identity provider, monitoring, and stronger session lifecycle controls remain |
+| Integrated dashboard | Same-origin page with password login, session-protected history, login rate limit, metadata-only audit events | Rate limit is per-process and IP-based; production identity provider and centralized monitoring remain external |
 | Existing CSV dashboard | Static HTML/CSS/JavaScript with configured HTTPS CSV source | Separate from the API-backed dashboard; the source URL is public to its intended viewers |
-| API write path | HMAC-SHA256, freshness window, replay nonce prevention, strict schema/ranges, streaming body-size cap | No device enrollment, per-device authorization, or automated key rotation |
+| API write path | HMAC-SHA256, freshness window, replay nonce prevention, strict schema/ranges, streaming body-size cap, optional per-device key map | No remote enrollment, automated key rotation, or overlapping key rollout |
 | API read paths | Separate bearer-token endpoint and session-protected browser endpoint | No roles or per-device read authorization |
-| Database | SQLite, parameterized statements, indexes, bounded queries | Not encrypted at rest; backup, retention, migration, and concurrency plan are limited |
+| Database | SQLite, parameterized statements, indexes, bounded queries, audit events, backup and opt-in retention CLI | Not encrypted at rest; backup restore testing, migration, and multi-worker concurrency policy remain operational duties |
 | Browser security | HttpOnly/SameSite cookie, same-origin checks, CSP, no bearer token in browser JS, text-only rendering | Browser-side data is visible to the authorized viewer; login rate limiting is not implemented here |
-| Automation | Python and Node tests, Bandit, pip-audit, firmware compile job | Green CI does not certify physical hardware or deployment safety |
-| Operations | Health endpoint, environment-configured secrets, non-root container, persistent volume, loopback-only port binding, read-only root filesystem, dropped capabilities, and container build CI | HTTPS termination, rate limiting, monitoring, backups, retention, secret rotation, and deployment-specific validation remain required |
+| Automation | Python and Node tests, Bandit, pip-audit, firmware compile job, container build/Compose validation | Green CI does not certify physical hardware or deployment safety |
+| Operations | Health/readiness endpoints, per-device secret mapping, in-process rate limits, metadata audit, protected audit endpoint, backup-before-delete retention CLI, hardened container | HTTPS termination, distributed rate limiting, external monitoring, restore drills, managed secret rotation, encryption at rest, and deployment-specific validation remain required |
 
 ## Pros
 
@@ -34,19 +34,19 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 
 - **Not production-ready:** real health data requires stronger privacy, availability, and operational controls.
 - **Firmware is a scaffold:** the BPM adapter, board/sensor selection, and physical validation are incomplete.
-- **Prototype login:** no login throttling, identity provider, user roles, or server-side session revocation list.
-- **Shared device configuration:** device enrollment, unique provisioning, rotation, and revocation need a deliberate lifecycle.
+- **Prototype login:** local login throttling is process-local; no identity provider, user roles, or server-side session revocation list.
+- **Device lifecycle:** per-device key mapping is supported, but provisioning, rotation/revocation workflow, and overlapping key rotation remain manual.
 - **SQLite constraints:** backups, retention, filesystem permissions, and concurrency must be addressed for deployment.
 - **No encryption-at-rest guarantee:** database/file-system encryption must be supplied separately.
 - **Sensor limitations:** low-cost sensors and classroom calibration are not diagnostic-grade; thresholds and trends are informational only.
 
-## Recommended next phases
+## Remaining work
 
-1. **Complete physical integration:** confirm board and sensor models, implement and validate the BPM adapter, flash the firmware, and verify CA-validated HTTPS on the device.
-2. **Device lifecycle security:** enrollment, unique per-device credentials, rotation/revocation, and auditable device status.
-3. **Operational controls:** login/API rate limiting, audit events, monitoring, backup/restore tests, data retention/deletion, and managed deployment secrets.
-4. **Resilience:** offline buffering, retry/backoff, idempotent delivery, clock drift handling, and fault-injection tests.
-5. **Advanced analytics:** only after collecting reliable data, add transparent sensor-quality and anomaly flags without medical claims.
+1. **Physical integration (hardware-dependent):** confirm board and heart-rate sensor models, implement and validate the BPM adapter, provision a real CA certificate, flash the firmware, and verify signed HTTPS delivery on the device.
+2. **Production operations:** configure a trusted HTTPS reverse proxy, distributed rate limiting, managed secrets, monitoring/alerts, encrypted storage/backups, and restore drills.
+3. **Stronger device lifecycle:** build secure enrollment/provisioning workflows, managed rotation with overlap, and device-level authorization for history.
+4. **Delivery guarantees:** add a versioned idempotency protocol before claiming exactly-once ingestion; implement and fault-test an ESP32 persistent offline queue after the hardware model is known.
+5. **Analytics:** only after reliable sensor data is available, add transparent quality/anomaly flags without medical claims.
 
 ## Acceptance checklist
 
@@ -56,6 +56,8 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 - [x] CI runs Python tests, Node tests, Bandit, and pip-audit.
 - [x] Firmware source has a hardware-free compile workflow and static readiness checks.
 - [x] Container image, hardened Compose template, deployment documentation, and container CI have been added.
+- [x] Per-device key mapping, process-local rate limiting, readiness, audit metadata, simulator retry/backoff, and backup-before-delete retention tooling are implemented.
+- [x] README and operations documentation describe the software controls and their limits.
 - [ ] The latest pull-request head has a successful full CI run.
 - [ ] Exact hardware/sensor models are confirmed and firmware is built on the target toolchain.
 - [ ] Physical device sends a signed HTTPS reading that appears in the authenticated dashboard.

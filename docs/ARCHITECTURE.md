@@ -14,11 +14,13 @@ Layer 2 — API trust boundary
   ├── POST /api/v1/dashboard/login      password + same-origin validation
   ├── GET  /api/v1/dashboard/readings   short-lived HttpOnly session cookie
   ├── POST /api/v1/dashboard/logout     session + same-origin validation
-  └── GET  /healthz                     minimal health check
+  ├── GET  /healthz                     process health
+  ├── GET  /readyz                      database readiness
+  └── GET  /api/v1/admin/audit           maintenance-token protected audit metadata
                  │ validated fields + parameterized SQL
                  ▼
 Layer 3 — Storage
-  SQLite readings table + replay nonce table
+  SQLite readings table + replay nonce table + metadata-only audit events
                  │ session-protected same-origin API
                  ▼
 Layer 4 — User interface
@@ -36,13 +38,13 @@ For a request with Unix timestamp T, nonce N, and exact request-body bytes B, th
 HMAC-SHA256(device_secret, ASCII(T + "." + N + ".") + B)
 ~~~
 
-The API verifies the timestamp is within five minutes, validates the nonce syntax, verifies the signature with a constant-time comparison, validates the payload, and atomically stores the nonce and reading. Reusing a nonce results in a conflict. The HMAC authenticates the message; TLS is still required to protect transport.
+The API verifies the timestamp is within five minutes, validates the nonce syntax, selects either the configured per-device secret or legacy local-development secret, verifies the signature with a constant-time comparison, validates the payload, and atomically stores the nonce and reading. When `IOT_DEVICE_SECRETS_JSON` is configured, only mapped device IDs are accepted. Reusing a nonce results in a conflict. The HMAC authenticates the message; TLS is still required to protect transport.
 
 ## Dashboard authentication
 
 The user enters the dashboard password into the same-origin page. The server checks the configured Origin and password, then sets a short-lived signed session cookie marked HttpOnly and SameSite=Strict. Secure is enabled by default and should remain enabled over HTTPS. Local loopback testing may explicitly disable Secure because the local server uses HTTP.
 
-The dashboard fetches history using the cookie; it never reads or stores IOT_READ_API_TOKEN. Login/logout Origin checks and same-site cookie policy reduce cross-site request risks. This is a prototype authentication layer, not a replacement for a production identity provider, rate limiting, monitoring, or session revocation infrastructure.
+The dashboard fetches history using the cookie; it never reads or stores IOT_READ_API_TOKEN. Login/logout Origin checks and same-site cookie policy reduce cross-site request risks. This is a prototype authentication layer. Login and ingestion have per-process IP-based rate limits, but these are not shared across workers and do not replace a trusted proxy-level limiter, production identity provider, monitoring, or session revocation infrastructure.
 
 ## Database
 
@@ -50,6 +52,8 @@ The dashboard fetches history using the cookie; it never reads or stores IOT_REA
 - used_nonces tracks accepted nonces and removes expired entries during later ingestion.
 - SQL parameters are bound; request fields are not interpolated into SQL.
 - SQLite files are local prototype data and are not encrypted at rest by this application.
+- Audit rows contain event type, actor/device ID, and timestamp only; passwords, tokens, HMAC secrets, and reading values are not written to the audit table.
+- `backend.maintenance` supports online SQLite backup and an explicit backup-before-delete retention workflow; operators must set policy and verify restore.
 
 ## Hardware boundary
 

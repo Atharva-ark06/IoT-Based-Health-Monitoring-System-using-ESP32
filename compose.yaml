@@ -9,7 +9,9 @@ services:
       # Bind locally; put a trusted HTTPS reverse proxy in front for remote access.
       - "127.0.0.1:8000:8000"
     environment:
-      IOT_DEVICE_HMAC_SECRET: ${IOT_DEVICE_HMAC_SECRET:?Set IOT_DEVICE_HMAC_SECRET in your environment}
+      IOT_DEVICE_HMAC_SECRET: ${IOT_DEVICE_HMAC_SECRET:-}
+      IOT_DEVICE_SECRETS_JSON: ${IOT_DEVICE_SECRETS_JSON:-}
+      IOT_MAINTENANCE_TOKEN: ${IOT_MAINTENANCE_TOKEN:-}
       IOT_READ_API_TOKEN: ${IOT_READ_API_TOKEN:?Set IOT_READ_API_TOKEN in your environment}
       IOT_DASHBOARD_PASSWORD: ${IOT_DASHBOARD_PASSWORD:?Set IOT_DASHBOARD_PASSWORD in your environment}
       IOT_SESSION_SECRET: ${IOT_SESSION_SECRET:?Set IOT_SESSION_SECRET in your environment}

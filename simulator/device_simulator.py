@@ -57,6 +57,43 @@ def send_reading(url: str, secret: str, reading: dict[str, object], timeout: flo
         raise RuntimeError("Could not reach ingestion API") from error
 
 
+def send_reading_with_retry(
+    url: str,
+    secret: str,
+    reading: dict[str, object],
+    *,
+    attempts: int = 3,
+    base_delay: float = 0.25,
+    sleeper=time.sleep,
+    sender=send_reading,
+) -> int:
+    """Retry transient failures with bounded exponential backoff.
+
+    A fresh timestamp and nonce are generated for each attempt. The API does not
+    guarantee exactly-once delivery if a response is lost after a commit.
+    """
+    if not 1 <= attempts <= 5:
+        raise ValueError("attempts must be between 1 and 5")
+    if base_delay < 0 or base_delay > 10:
+        raise ValueError("base_delay must be between 0 and 10 seconds")
+    last_error: RuntimeError | None = None
+    for attempt in range(attempts):
+        try:
+            status = sender(url, secret, reading)
+        except RuntimeError as error:
+            last_error = error
+            status = 503
+        if 200 <= status < 300:
+            return status
+        transient = status == 429 or 500 <= status <= 599
+        if not transient or attempt + 1 >= attempts:
+            if last_error is not None and status == 503:
+                raise last_error
+            return status
+        sleeper(base_delay * (2 ** attempt))
+    return 503
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:8000/api/v1/readings")
@@ -81,7 +118,7 @@ def main() -> int:
             "bpm": 72 + (index % 8),
         }
         try:
-            status = send_reading(args.url, secret, reading)
+            status = send_reading_with_retry(args.url, secret, reading)
         except (ValueError, RuntimeError) as error:
             print(f"Request failed: {error}")
             return 1
