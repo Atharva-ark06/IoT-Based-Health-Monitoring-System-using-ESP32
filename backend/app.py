@@ -90,6 +90,21 @@ def _normalize_filter_timestamp(value: datetime | None, label: str) -> str | Non
     return value.astimezone(timezone.utc).isoformat()
 
 
+async def _read_limited_body(request: Request, maximum: int) -> bytes:
+    """Read a request incrementally so chunked bodies cannot bypass size limits."""
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > maximum:
+        raise HTTPException(status_code=413, detail="Request body too large")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > maximum:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _make_session(secret: str, now: int | None = None) -> str:
     expires = (now if now is not None else int(time.time())) + DASHBOARD_SESSION_SECONDS
     nonce = secrets.token_urlsafe(24)
@@ -187,12 +202,7 @@ def create_app(
         if not configured_session_secret or len(configured_session_secret) < 32:
             raise HTTPException(status_code=503, detail="Dashboard sessions are not configured")
 
-        content_length = request.headers.get("content-length")
-        if content_length and content_length.isdigit() and int(content_length) > MAX_LOGIN_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Login request too large")
-        body = await request.body()
-        if len(body) > MAX_LOGIN_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Login request too large")
+        body = await _read_limited_body(request, MAX_LOGIN_BODY_BYTES)
         try:
             credentials = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -276,12 +286,7 @@ def create_app(
         if abs(now - sent_at) > SIGNATURE_WINDOW_SECONDS:
             raise HTTPException(status_code=401, detail="Expired device request")
 
-        content_length = request.headers.get("content-length")
-        if content_length and content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Request body too large")
-        body = await request.body()
-        if len(body) > MAX_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Request body too large")
+        body = await _read_limited_body(request, MAX_BODY_BYTES)
 
         expected = _signature(secret, x_device_timestamp, x_device_nonce, body)
         if not hmac.compare_digest(expected, x_device_signature.lower()):
