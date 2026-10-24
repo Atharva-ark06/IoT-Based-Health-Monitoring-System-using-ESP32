@@ -132,7 +132,7 @@ bool submitReading(float temperatureC, int bpm, time_t now) {
   http.addHeader("X-Device-Timestamp", timestampHeader);
   http.addHeader("X-Device-Nonce", nonce);
   http.addHeader("X-Device-Signature", signature);
-  const int status = http.POST(reinterpret_cast<const uint8_t *>(body.c_str()), body.length());
+  const int status = http.POST(body);
   http.end();
 
   // Do not log sensor values, secrets, signatures, or request bodies.
