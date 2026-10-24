@@ -67,6 +67,7 @@ def test_login_issues_http_only_same_site_session_and_dashboard_reads_data(tmp_p
 
     history = client.get("/api/v1/dashboard/readings")
     assert history.status_code == 200
+    assert history.headers["cache-control"] == "no-store"
     assert history.json()["readings"][0]["device_id"] == "esp32-dashboard-test"
 
 
