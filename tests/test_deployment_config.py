@@ -13,13 +13,15 @@ def test_container_runs_as_non_root_and_has_healthcheck():
 def test_compose_requires_secrets_and_binds_only_to_loopback():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     for name in (
-        "IOT_DEVICE_HMAC_SECRET",
         "IOT_READ_API_TOKEN",
         "IOT_DASHBOARD_PASSWORD",
         "IOT_SESSION_SECRET",
         "IOT_DASHBOARD_ORIGIN",
     ):
         assert f"${{{name}:?" in compose
+    assert "IOT_DEVICE_HMAC_SECRET: ${IOT_DEVICE_HMAC_SECRET:-}" in compose
+    assert "IOT_DEVICE_SECRETS_JSON: ${IOT_DEVICE_SECRETS_JSON:-}" in compose
+    assert "IOT_MAINTENANCE_TOKEN: ${IOT_MAINTENANCE_TOKEN:-}" in compose
     assert '"127.0.0.1:8000:8000"' in compose
     assert "IOT_COOKIE_SECURE: \"true\"" in compose
     assert "iot-data:/app/data" in compose
