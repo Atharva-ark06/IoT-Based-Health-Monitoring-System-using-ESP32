@@ -1,29 +1,31 @@
-"""Authenticated sensor-ingestion API for the ESP32 health-monitoring demo.
-
-Run behind an HTTPS reverse proxy. This service deliberately does not enable CORS
-or expose credentials to the browser dashboard.
-"""
+"""Authenticated sensor-ingestion API and session-protected dashboard."""
 from __future__ import annotations
 
 import hashlib
-from contextlib import closing
 import hmac
+import json
 import os
 import re
 import secrets
 import sqlite3
 import time
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 MAX_BODY_BYTES = 16 * 1024
+MAX_LOGIN_BODY_BYTES = 2 * 1024
 SIGNATURE_WINDOW_SECONDS = 300
+DASHBOARD_SESSION_SECONDS = 1800
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9_-]+$"
+SESSION_COOKIE_NAME = "iot_dashboard_session"
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class Reading(BaseModel):
@@ -84,32 +86,169 @@ def _normalize_filter_timestamp(value: datetime | None, label: str) -> str | Non
     if value is None:
         return None
     if value.tzinfo is None or value.utcoffset() is None:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{label} must include a timezone",
-        )
+        raise HTTPException(status_code=422, detail=f"{label} must include a timezone")
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _make_session(secret: str, now: int | None = None) -> str:
+    expires = (now if now is not None else int(time.time())) + DASHBOARD_SESSION_SECONDS
+    nonce = secrets.token_urlsafe(24)
+    payload = f"{expires}.{nonce}"
+    signature = hmac.new(secret.encode("utf-8"), payload.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def _valid_session(value: str | None, secret: str, now: int | None = None) -> bool:
+    if not value:
+        return False
+    try:
+        expires_text, nonce, supplied_signature = value.split(".", 2)
+        if not expires_text.isascii() or not expires_text.isdigit() or not nonce:
+            return False
+        expires = int(expires_text)
+        current = now if now is not None else int(time.time())
+        if expires <= current or expires > current + DASHBOARD_SESSION_SECONDS:
+            return False
+        payload = f"{expires_text}.{nonce}"
+        expected = hmac.new(secret.encode("utf-8"), payload.encode("ascii"), hashlib.sha256).hexdigest()
+        return secrets.compare_digest(expected, supplied_signature)
+    except (ValueError, UnicodeEncodeError):
+        return False
 
 
 def create_app(
     db_path: str | None = None,
     device_secret: str | None = None,
     read_token: str | None = None,
+    dashboard_password: str | None = None,
+    session_secret: str | None = None,
+    dashboard_origin: str | None = None,
+    secure_cookies: bool | None = None,
 ) -> FastAPI:
-    """Build the app; optional parameters make isolated tests deterministic."""
+    """Build the app; injectable settings make isolated tests deterministic."""
     database = db_path or os.getenv("IOT_DATABASE_PATH", "data/readings.sqlite3")
+    configured_dashboard_password = dashboard_password or os.getenv("IOT_DASHBOARD_PASSWORD")
+    configured_session_secret = session_secret or os.getenv("IOT_SESSION_SECRET")
+    allowed_origin = (dashboard_origin or os.getenv("IOT_DASHBOARD_ORIGIN") or "http://127.0.0.1:8000").rstrip("/")
+    if secure_cookies is None:
+        secure_cookies = os.getenv("IOT_COOKIE_SECURE", "true").strip().lower() not in {"0", "false", "no"}
+
     app = FastAPI(
         title="ESP32 Health Monitoring Ingestion API",
-        version="1.1.0",
-        description="Authenticated ingestion and separately authenticated reading access.",
+        version="1.2.0",
+        description="Authenticated ingestion, history access, and a session-protected dashboard.",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
 
+    def require_dashboard_session(request: Request) -> None:
+        if not configured_session_secret or len(configured_session_secret) < 32:
+            raise HTTPException(status_code=503, detail="Dashboard sessions are not configured")
+        cookie = request.cookies.get(SESSION_COOKIE_NAME)
+        if not _valid_session(cookie, configured_session_secret):
+            raise HTTPException(status_code=401, detail="Dashboard login required")
+
+    def require_same_origin(request: Request) -> None:
+        origin = request.headers.get("origin", "").rstrip("/")
+        if not origin or not secrets.compare_digest(origin, allowed_origin):
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/dashboard", include_in_schema=False)
+    def dashboard_page() -> Response:
+        return FileResponse(
+            ROOT / "health" / "api_dashboard.html",
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            },
+        )
+
+    @app.get("/dashboard.js", include_in_schema=False)
+    def dashboard_script() -> Response:
+        return FileResponse(
+            ROOT / "health" / "api_dashboard.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @app.post("/api/v1/dashboard/login")
+    async def dashboard_login(request: Request, response: Response) -> dict[str, str]:
+        require_same_origin(request)
+        if not configured_dashboard_password:
+            raise HTTPException(status_code=503, detail="Dashboard login is not configured")
+        if not configured_session_secret or len(configured_session_secret) < 32:
+            raise HTTPException(status_code=503, detail="Dashboard sessions are not configured")
+
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > MAX_LOGIN_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Login request too large")
+        body = await request.body()
+        if len(body) > MAX_LOGIN_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Login request too large")
+        try:
+            credentials = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="Invalid login request") from None
+        password = credentials.get("password") if isinstance(credentials, dict) else None
+        if not isinstance(password, str) or not secrets.compare_digest(configured_dashboard_password, password):
+            raise HTTPException(status_code=401, detail="Invalid dashboard credentials")
+
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=_make_session(configured_session_secret),
+            max_age=DASHBOARD_SESSION_SECONDS,
+            httponly=True,
+            secure=secure_cookies,
+            samesite="strict",
+            path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return {"status": "authenticated"}
+
+    @app.post("/api/v1/dashboard/logout")
+    def dashboard_logout(request: Request, response: Response) -> dict[str, str]:
+        require_same_origin(request)
+        require_dashboard_session(request)
+        response.delete_cookie(
+            key=SESSION_COOKIE_NAME,
+            path="/",
+            httponly=True,
+            secure=secure_cookies,
+            samesite="strict",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return {"status": "logged_out"}
+
+    @app.get("/api/v1/dashboard/readings")
+    def dashboard_readings(
+        request: Request,
+        limit: int = Query(default=100, ge=1, le=500),
+        device_id: str | None = Query(default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN),
+    ) -> dict[str, object]:
+        require_dashboard_session(request)
+        try:
+            with _connect(database) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT id, device_id, timestamp, temperature, bpm, received_at
+                    FROM readings
+                    WHERE (? IS NULL OR device_id = ?)
+                    ORDER BY timestamp DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (device_id, device_id, limit),
+                ).fetchall()
+        except sqlite3.Error:
+            raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
+        return {"readings": [dict(row) for row in rows], "count": len(rows), "limit": limit}
 
     @app.post("/api/v1/readings", status_code=201)
     async def ingest_reading(
@@ -121,7 +260,6 @@ def create_app(
         secret = device_secret or os.getenv("IOT_DEVICE_HMAC_SECRET")
         if not secret:
             raise HTTPException(status_code=503, detail="Device ingestion is not configured")
-
         if not x_device_timestamp or not x_device_nonce or not x_device_signature:
             raise HTTPException(status_code=401, detail="Missing device authentication headers")
         if (
@@ -141,7 +279,6 @@ def create_app(
         content_length = request.headers.get("content-length")
         if content_length and content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
             raise HTTPException(status_code=413, detail="Request body too large")
-
         body = await request.body()
         if len(body) > MAX_BODY_BYTES:
             raise HTTPException(status_code=413, detail="Request body too large")
@@ -149,7 +286,6 @@ def create_app(
         expected = _signature(secret, x_device_timestamp, x_device_nonce, body)
         if not hmac.compare_digest(expected, x_device_signature.lower()):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
-
         try:
             reading = Reading.model_validate_json(body)
         except (ValidationError, UnicodeDecodeError, TypeError):
@@ -159,7 +295,6 @@ def create_app(
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise HTTPException(status_code=422, detail="timestamp must include a timezone")
         normalized_timestamp = timestamp.astimezone(timezone.utc).isoformat()
-
         try:
             with closing(_connect(database)) as connection, connection:
                 connection.execute(
@@ -188,16 +323,13 @@ def create_app(
             raise HTTPException(status_code=409, detail="Device request already used") from None
         except sqlite3.Error:
             raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
-
         return {"id": reading_id, "status": "accepted"}
 
     @app.get("/api/v1/readings")
     def list_readings(
         authorization: Annotated[str | None, Header()] = None,
         limit: int = Query(default=100, ge=1, le=500),
-        device_id: str | None = Query(
-            default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN
-        ),
+        device_id: str | None = Query(default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN),
         start: datetime | None = Query(default=None),
         end: datetime | None = Query(default=None),
     ) -> dict[str, object]:
@@ -218,15 +350,9 @@ def create_app(
         end_utc = _normalize_filter_timestamp(end, "end")
         if start_utc and end_utc and start_utc > end_utc:
             raise HTTPException(status_code=422, detail="start must be earlier than or equal to end")
-
-        # Keep SQL static and bind every user-controlled filter as a parameter.
         parameters: list[object] = [
-            device_id, device_id,
-            start_utc, start_utc,
-            end_utc, end_utc,
-            limit,
+            device_id, device_id, start_utc, start_utc, end_utc, end_utc, limit,
         ]
-
         try:
             with _connect(database) as connection:
                 rows = connection.execute(
@@ -243,16 +369,11 @@ def create_app(
                 ).fetchall()
         except sqlite3.Error:
             raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
-
         return {
             "readings": [dict(row) for row in rows],
             "count": len(rows),
             "limit": limit,
-            "filters": {
-                "device_id": device_id,
-                "start": start_utc,
-                "end": end_utc,
-            },
+            "filters": {"device_id": device_id, "start": start_utc, "end": end_utc},
         }
 
     return app
