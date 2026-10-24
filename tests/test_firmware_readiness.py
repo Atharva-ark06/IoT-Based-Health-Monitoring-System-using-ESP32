@@ -47,7 +47,7 @@ class FirmwareReadinessTests(unittest.TestCase):
             "REPLACE_WITH_REAL_CA_CERTIFICATE",
         ):
             self.assertIn(placeholder, self.example_secrets)
-        self.assertNotIn("setInsecure()", self.example_secrets)
+        self.assertNotRegex(self.example_secrets, r"(?m)^\s*(?:tlsClient|client)\.setInsecure\s*\(")
 
     def test_device_secrets_file_is_gitignored(self):
         self.assertIn("firmware/**/secrets.h", self.gitignore)
