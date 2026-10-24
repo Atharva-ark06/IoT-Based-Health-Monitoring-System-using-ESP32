@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RATE_WINDOW_SECONDS = 60
 LOGIN_RATE_LIMIT = 5
 INGEST_RATE_LIMIT = 120
+MAX_RATE_BUCKETS = 10000
 
 
 class Reading(BaseModel):
@@ -213,6 +214,9 @@ def create_app(
             limit = login_rate_limit if path.endswith("/login") else ingest_rate_limit
             host = request.client.host if request.client else "unknown"
             bucket_key = (path, host)
+            if bucket_key not in rate_buckets and len(rate_buckets) >= MAX_RATE_BUCKETS:
+                # Bound memory use if clients continually change source addresses.
+                rate_buckets.pop(next(iter(rate_buckets)), None)
             now = time.monotonic()
             bucket = rate_buckets[bucket_key]
             while bucket and bucket[0] <= now - rate_window_seconds:
