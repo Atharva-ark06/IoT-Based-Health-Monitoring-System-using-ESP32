@@ -51,6 +51,30 @@ def test_per_device_key_enrollment_and_unknown_device_rejection(tmp_path):
     assert response.status_code == 401
     assert "enrolled" not in response.text.lower()
 
+    # A configured per-device map must never fall back to the legacy shared key.
+    legacy_fallback_client = TestClient(
+        create_app(
+            db_path=str(tmp_path / "fallback.sqlite3"),
+            device_secret=DEVICE_SECRET,
+            device_secrets={"esp32-a": DEVICE_SECRET},
+        )
+    )
+    malformed_body = json.dumps(
+        {"device_id": 123, "timestamp": datetime.now(timezone.utc).isoformat(),
+         "temperature": 36.5, "bpm": 72},
+        separators=(",", ":"),
+    ).encode()
+    timestamp = str(int(time.time()))
+    malformed_headers = {
+        "Content-Type": "application/json",
+        "X-Device-Timestamp": timestamp,
+        "X-Device-Nonce": "operational-test-nonce-0003",
+        "X-Device-Signature": _signature(DEVICE_SECRET, timestamp, "operational-test-nonce-0003", malformed_body),
+    }
+    assert legacy_fallback_client.post(
+        "/api/v1/readings", content=malformed_body, headers=malformed_headers
+    ).status_code == 401
+
 
 def test_login_rate_limit_and_audit_endpoint(tmp_path, monkeypatch):
     monkeypatch.setenv("IOT_MAINTENANCE_TOKEN", "maintenance-token-for-tests")
