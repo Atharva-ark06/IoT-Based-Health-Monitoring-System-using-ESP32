@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections import defaultdict, deque
 import os
 import re
 import secrets
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 MAX_BODY_BYTES = 16 * 1024
@@ -26,6 +27,9 @@ NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9_-]+$"
 SESSION_COOKIE_NAME = "iot_dashboard_session"
 ROOT = Path(__file__).resolve().parent.parent
+RATE_WINDOW_SECONDS = 60
+LOGIN_RATE_LIMIT = 5
+INGEST_RATE_LIMIT = 120
 
 
 class Reading(BaseModel):
@@ -74,7 +78,33 @@ def _connect(db_path: str) -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_readings_device_timestamp ON readings(device_id, timestamp)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            actor_id TEXT NOT NULL,
+            occurred_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at ON audit_events(occurred_at)"
+    )
     return connection
+
+
+def _record_audit(db_path: str, event_type: str, actor_id: str) -> None:
+    """Store security-relevant metadata only; never record credentials or reading values."""
+    try:
+        with closing(_connect(db_path)) as connection, connection:
+            connection.execute(
+                "INSERT INTO audit_events(event_type, actor_id, occurred_at) VALUES (?, ?, ?)",
+                (event_type, actor_id[:64], _utc_now().isoformat()),
+            )
+    except sqlite3.Error:
+        # Auditing must not turn a valid request into an outage; deployments should monitor storage.
+        return
 
 
 def _signature(secret: str, timestamp: str, nonce: str, body: bytes) -> str:
@@ -139,11 +169,28 @@ def create_app(
     session_secret: str | None = None,
     dashboard_origin: str | None = None,
     secure_cookies: bool | None = None,
+    device_secrets: dict[str, str] | None = None,
+    login_rate_limit: int = LOGIN_RATE_LIMIT,
+    ingest_rate_limit: int = INGEST_RATE_LIMIT,
+    rate_window_seconds: int = RATE_WINDOW_SECONDS,
 ) -> FastAPI:
     """Build the app; injectable settings make isolated tests deterministic."""
     database = db_path or os.getenv("IOT_DATABASE_PATH", "data/readings.sqlite3")
     configured_dashboard_password = dashboard_password or os.getenv("IOT_DASHBOARD_PASSWORD")
     configured_session_secret = session_secret or os.getenv("IOT_SESSION_SECRET")
+    raw_device_secrets = os.getenv("IOT_DEVICE_SECRETS_JSON")
+    if device_secrets is None and raw_device_secrets:
+        try:
+            parsed_device_secrets = json.loads(raw_device_secrets)
+            if not isinstance(parsed_device_secrets, dict) or not all(
+                isinstance(key, str) and isinstance(value, str) and value
+                for key, value in parsed_device_secrets.items()
+            ):
+                raise ValueError("IOT_DEVICE_SECRETS_JSON must map device IDs to non-empty secrets")
+            device_secrets = parsed_device_secrets
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError("Invalid IOT_DEVICE_SECRETS_JSON configuration") from error
+    configured_device_secrets = device_secrets
     allowed_origin = (dashboard_origin or os.getenv("IOT_DASHBOARD_ORIGIN") or "http://127.0.0.1:8000").rstrip("/")
     if secure_cookies is None:
         secure_cookies = os.getenv("IOT_COOKIE_SECURE", "true").strip().lower() not in {"0", "false", "no"}
@@ -156,6 +203,28 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
+
+    rate_buckets: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+
+    @app.middleware("http")
+    async def apply_local_rate_limits(request: Request, call_next):
+        path = request.url.path
+        if request.method == "POST" and path in {"/api/v1/dashboard/login", "/api/v1/readings"}:
+            limit = login_rate_limit if path.endswith("/login") else ingest_rate_limit
+            host = request.client.host if request.client else "unknown"
+            bucket_key = (path, host)
+            now = time.monotonic()
+            bucket = rate_buckets[bucket_key]
+            while bucket and bucket[0] <= now - rate_window_seconds:
+                bucket.popleft()
+            if len(bucket) >= limit:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded"},
+                    headers={"Retry-After": str(max(1, rate_window_seconds))},
+                )
+            bucket.append(now)
+        return await call_next(request)
 
     def require_dashboard_session(request: Request) -> None:
         if not configured_session_secret or len(configured_session_secret) < 32:
@@ -172,6 +241,15 @@ def create_app(
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/readyz")
+    def readyz() -> dict[str, str]:
+        try:
+            with closing(_connect(database)) as connection:
+                connection.execute("SELECT 1").fetchone()
+        except sqlite3.Error:
+            raise HTTPException(status_code=503, detail="Storage unavailable") from None
+        return {"status": "ready"}
 
     @app.get("/dashboard", include_in_schema=False)
     def dashboard_page() -> Response:
@@ -211,8 +289,10 @@ def create_app(
         if not isinstance(password, str) or not secrets.compare_digest(
             configured_dashboard_password.encode("utf-8"), password.encode("utf-8")
         ):
+            _record_audit(database, "dashboard_login_failed", "dashboard")
             raise HTTPException(status_code=401, detail="Invalid dashboard credentials")
 
+        _record_audit(database, "dashboard_login_succeeded", "dashboard")
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=_make_session(configured_session_secret),
@@ -229,6 +309,7 @@ def create_app(
     def dashboard_logout(request: Request, response: Response) -> dict[str, str]:
         require_same_origin(request)
         require_dashboard_session(request)
+        _record_audit(database, "dashboard_logout", "dashboard")
         response.delete_cookie(
             key=SESSION_COOKIE_NAME,
             path="/",
@@ -272,8 +353,8 @@ def create_app(
         x_device_nonce: Annotated[str | None, Header()] = None,
         x_device_signature: Annotated[str | None, Header()] = None,
     ) -> dict[str, object]:
-        secret = device_secret or os.getenv("IOT_DEVICE_HMAC_SECRET")
-        if not secret:
+        legacy_secret = device_secret or os.getenv("IOT_DEVICE_HMAC_SECRET")
+        if not configured_device_secrets and not legacy_secret:
             raise HTTPException(status_code=503, detail="Device ingestion is not configured")
         if not x_device_timestamp or not x_device_nonce or not x_device_signature:
             raise HTTPException(status_code=401, detail="Missing device authentication headers")
@@ -293,15 +374,24 @@ def create_app(
 
         body = await _read_limited_body(request, MAX_BODY_BYTES)
 
+        try:
+            reading = Reading.model_validate_json(body)
+        except (ValidationError, UnicodeDecodeError, TypeError):
+            raise HTTPException(status_code=422, detail="Invalid reading payload") from None
+
+        secret = (
+            configured_device_secrets.get(reading.device_id)
+            if configured_device_secrets is not None
+            else legacy_secret
+        )
+        if not secret:
+            # Do not disclose whether a device ID has been enrolled.
+            raise HTTPException(status_code=401, detail="Invalid device authentication")
         expected = _signature(secret, x_device_timestamp, x_device_nonce, body)
         if not re.fullmatch(r"[0-9a-fA-F]{64}", x_device_signature) or not hmac.compare_digest(
             expected, x_device_signature.lower()
         ):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
-        try:
-            reading = Reading.model_validate_json(body)
-        except (ValidationError, UnicodeDecodeError, TypeError):
-            raise HTTPException(status_code=422, detail="Invalid reading payload") from None
 
         timestamp = reading.timestamp
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
@@ -331,11 +421,38 @@ def create_app(
                     ),
                 )
                 reading_id = cursor.lastrowid
+                connection.execute(
+                    "INSERT INTO audit_events(event_type, actor_id, occurred_at) VALUES (?, ?, ?)",
+                    ("reading_accepted", reading.device_id, _utc_now().isoformat()),
+                )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="Device request already used") from None
         except sqlite3.Error:
             raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
         return {"id": reading_id, "status": "accepted"}
+
+    @app.get("/api/v1/admin/audit")
+    def list_audit_events(
+        authorization: Annotated[str | None, Header()] = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        expected_token = os.getenv("IOT_MAINTENANCE_TOKEN", "")
+        scheme, separator, supplied_token = (authorization or "").partition(" ")
+        if not expected_token:
+            raise HTTPException(status_code=503, detail="Maintenance access is not configured")
+        if not separator or scheme.lower() != "bearer" or not secrets.compare_digest(
+            expected_token.encode("utf-8"), supplied_token.encode("utf-8")
+        ):
+            raise HTTPException(status_code=401, detail="Maintenance authentication required")
+        try:
+            with closing(_connect(database)) as connection:
+                rows = connection.execute(
+                    "SELECT id, event_type, actor_id, occurred_at FROM audit_events ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error:
+            raise HTTPException(status_code=503, detail="Storage temporarily unavailable") from None
+        return {"events": [dict(row) for row in rows], "count": len(rows), "limit": limit}
 
     @app.get("/api/v1/readings")
     def list_readings(
