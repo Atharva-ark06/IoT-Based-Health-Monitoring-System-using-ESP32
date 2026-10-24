@@ -375,13 +375,17 @@ def create_app(
         body = await _read_limited_body(request, MAX_BODY_BYTES)
 
         try:
-            reading = Reading.model_validate_json(body)
-        except (ValidationError, UnicodeDecodeError, TypeError):
+            untrusted_payload = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
             raise HTTPException(status_code=422, detail="Invalid reading payload") from None
-
+        candidate_id = (
+            untrusted_payload.get("device_id")
+            if isinstance(untrusted_payload, dict)
+            else None
+        )
         secret = (
-            configured_device_secrets.get(reading.device_id)
-            if configured_device_secrets is not None
+            configured_device_secrets.get(candidate_id)
+            if configured_device_secrets is not None and isinstance(candidate_id, str)
             else legacy_secret
         )
         if not secret:
@@ -392,6 +396,10 @@ def create_app(
             expected, x_device_signature.lower()
         ):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
+        try:
+            reading = Reading.model_validate_json(body)
+        except (ValidationError, UnicodeDecodeError, TypeError):
+            raise HTTPException(status_code=422, detail="Invalid reading payload") from None
 
         timestamp = reading.timestamp
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
