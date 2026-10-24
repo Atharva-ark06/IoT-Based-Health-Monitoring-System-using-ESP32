@@ -125,6 +125,18 @@ def test_oversized_body_is_rejected_before_signature_validation(tmp_path):
     assert client.post("/api/v1/readings", content=body, headers=headers).status_code == 413
 
 
+def test_chunked_oversized_body_is_rejected_without_content_length(tmp_path):
+    client = make_client(tmp_path)
+
+    def chunks():
+        yield b" " * (MAX_BODY_BYTES // 2)
+        yield b" " * (MAX_BODY_BYTES // 2 + 1)
+
+    headers = signed_headers(b"{}", "nonce-chunked-large-0001")
+    response = client.post("/api/v1/readings", content=chunks(), headers=headers)
+    assert response.status_code == 413
+
+
 def test_stale_device_request_is_rejected(tmp_path):
     client = make_client(tmp_path)
     body = valid_body()
