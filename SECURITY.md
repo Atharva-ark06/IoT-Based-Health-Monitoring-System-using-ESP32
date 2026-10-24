@@ -16,32 +16,36 @@ Temperature and heart-rate readings can be sensitive personal data.
 
 | Area | Control | Limit |
 | --- | --- | --- |
-| Dashboard source | Configured HTTPS CSV source; no embedded private token | The configured URL is public to dashboard visitors |
-| Dashboard rendering | Imported timestamps are escaped; regression tests cover key behaviors | Browser code and data displayed to users are not private from those users |
-| Device ingestion API | HMAC-SHA256 signature over timestamp, nonce, and exact request body; five-minute freshness window; replay nonce detection | Device-side signing, provisioning, and per-device keys are not implemented in the repository |
+| Existing CSV dashboard | Configured HTTPS CSV source; no embedded private token | The configured URL is public to dashboard visitors |
+| Dashboard rendering | Incoming readings are rendered as text; regression tests cover key behaviors | Data displayed to a user is visible to that user |
+| Device ingestion API | HMAC-SHA256 signature over timestamp, nonce, and exact request body; five-minute freshness window; replay nonce detection | Device enrollment and per-device key provisioning/rotation are not implemented |
+| Firmware scaffold | HTTPS CA validation, time sync, HMAC signing, local secrets template | Heart-rate sensor adapter is unfinished; no physical hardware verification is claimed |
 | Payload validation | Strict schema, allowed fields/ranges, timezone-aware timestamps, request body limit | Valid-looking readings can still be inaccurate or spoofed at the sensor |
-| Reading retrieval | Separate bearer token; bounded limit; optional device and time filters | No user accounts, roles, or per-device read authorization |
+| Trusted-client history | Separate bearer token; bounded limit; optional device/time filters | No user accounts, roles, or per-device read authorization on this endpoint |
+| API dashboard | Password login, short-lived signed HttpOnly/SameSite cookie, same-origin checks for login/logout, restrictive CSP | Prototype sessions; add rate limiting, monitoring, identity management, and stronger session lifecycle controls before deployment |
 | Database | SQLite parameterized statements and indexes | No application-level encryption at rest, retention automation, or managed backup plan |
-| CI | API tests, dashboard regression tests, Bandit, and pip-audit workflow | Passing checks do not certify the full system or its deployment |
+| CI | Python tests, Node dashboard regression tests, Bandit, and pip-audit | Passing checks do not certify the full system or its deployment |
 
 ## API security boundary
 
-The optional API in `backend/app.py` is a backend building block. Device writes require `X-Device-Timestamp`, `X-Device-Nonce`, and `X-Device-Signature`; the signature is HMAC-SHA256 over the timestamp, nonce, and exact raw body. Reading retrieval requires a separate `IOT_READ_API_TOKEN`.
+Device writes require X-Device-Timestamp, X-Device-Nonce, and X-Device-Signature; the signature is HMAC-SHA256 over the timestamp, nonce, and exact raw body. Trusted-client reading retrieval requires the separate IOT_READ_API_TOKEN.
 
-HMAC authenticates a request but does **not** encrypt it. Use HTTPS or a private network. Do not expose the development server directly to the internet. Never embed the read token in the static dashboard or a public CSV URL. Store secrets using environment configuration for local work and a secret manager for deployment.
+The integrated browser dashboard uses IOT_DASHBOARD_PASSWORD and IOT_SESSION_SECRET to create a short-lived signed session cookie. The server-side read token is never embedded in browser JavaScript. Set IOT_DASHBOARD_ORIGIN to the exact origin serving the dashboard and keep IOT_COOKIE_SECURE enabled behind HTTPS. Disabling secure cookies is only for loopback-only local HTTP development.
+
+HMAC authenticates a request but does **not** encrypt it. Use HTTPS or a private network. Do not expose the development server directly to the internet. Store secrets using environment configuration for local work and a secret manager for deployment.
 
 ## Before real-data use
 
-1. Add and review firmware source, device-side signing, secure key provisioning, and TLS certificate validation.
-2. Use unique device credentials and define rotation/revocation.
-3. Put the API behind HTTPS, rate limiting, and monitoring.
-4. Define access control, retention/deletion, encrypted storage and backups, and incident response.
-5. Use an authenticated server-side dashboard integration; never expose a private bearer token to browser JavaScript.
-6. Test the complete device → API → history → authorized dashboard flow with synthetic data.
+1. Confirm the exact hardware and heart-rate sensor model; implement and validate the BPM adapter.
+2. Build and flash the firmware, replace the CA placeholder, and verify certificate-validated HTTPS on the device.
+3. Use unique device credentials and define secure provisioning, rotation, and revocation.
+4. Put the API behind HTTPS, login rate limiting, monitoring, and an incident-response process.
+5. Define access control, retention/deletion, encrypted storage and backups, and privacy requirements.
+6. Test the complete device → API → history → authorized dashboard flow with synthetic data before any real-data use.
 7. Verify data permissions in a signed-out browser and remove personal identifiers unless genuinely required.
 8. Treat dashboard indicators as informational only, not medical diagnosis or a substitute for professional equipment/advice.
 
-The checked-in repository currently has no ESP32 `.ino` firmware source. Pin assignments, device signing, sensor calibration, and end-to-end behavior therefore cannot yet be verified from this repository.
+The simulator proves the software protocol path only. Physical pin assignments, sensor calibration, heart-rate calculations, and hardware-side behavior remain unverified.
 
 ## Reporting a vulnerability
 

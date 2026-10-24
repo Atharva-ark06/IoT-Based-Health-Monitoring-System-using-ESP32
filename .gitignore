@@ -13,3 +13,6 @@ data/
 .env
 .env.*
 !.env.example
+
+# ESP32 local credentials (copy secrets.example.h to secrets.h)
+firmware/**/secrets.h

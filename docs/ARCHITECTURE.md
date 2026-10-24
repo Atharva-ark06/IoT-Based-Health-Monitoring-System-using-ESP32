@@ -1,74 +1,64 @@
 # Architecture and How It Works
 
-## System hierarchy
+## Integrated flow
 
-```text
-Layer 1 — Sensing
-  DHT11 temperature sensor + heart-rate sensor
-                 │ sensor readings
+~~~text
+Layer 1 — Data source
+  Synthetic simulator (available now) OR ESP32 firmware scaffold
+                 │ HMAC-signed JSON over HTTPS
                  ▼
-Layer 2 — Edge device (planned integration)
-  ESP32 firmware → validate readings → Wi-Fi
-  Status: firmware source is not currently checked in.
-                 │ HTTPS request + HMAC signature (planned on device)
-                 ▼
-Layer 3 — API / trust boundary
+Layer 2 — API trust boundary
   FastAPI
-  ├── POST /api/v1/readings  — signed device writes
-  ├── GET  /api/v1/readings  — bearer-token-protected history
-  └── GET  /healthz          — service health check
-                 │ parameterized SQL
+  ├── POST /api/v1/readings             device signature + freshness + nonce
+  ├── GET  /api/v1/readings             separate bearer token for trusted clients
+  ├── POST /api/v1/dashboard/login      password + same-origin validation
+  ├── GET  /api/v1/dashboard/readings   short-lived HttpOnly session cookie
+  ├── POST /api/v1/dashboard/logout     session + same-origin validation
+  └── GET  /healthz                     minimal health check
+                 │ validated fields + parameterized SQL
                  ▼
-Layer 4 — Storage
-  SQLite readings table + replay-protection nonce table
-                 │ authorized query
+Layer 3 — Storage
+  SQLite readings table + replay nonce table
+                 │ session-protected same-origin API
                  ▼
-Layer 5 — Presentation
-  Existing static HTML dashboard (CSV-source workflow)
-  Status: not wired to the authenticated API; never put its read token in browser code.
-                 │
-                 ▼
-Layer 6 — Verification and operations
-  GitHub Actions → pytest → Bandit → pip-audit → dashboard regression tests
-```
+Layer 4 — User interface
+  /dashboard + /dashboard.js
+  No server bearer token or device secret in browser JavaScript
+~~~
 
-The layers are intentionally separated. The authenticated API is a security-oriented backend building block; it is not yet an end-to-end deployed product. In particular, the repository does not contain the ESP32 firmware source, device-side HMAC signing, an API-backed dashboard session, or a production deployment configuration.
+The existing health/sensor_dashboard.html is a separate static dashboard that reads a configured HTTPS CSV source. The new /dashboard page is served by FastAPI and reads the API database through a browser session. The two dashboards are intentionally distinct.
 
-## Request lifecycle
+## Request signing
 
-1. A device payload contains `device_id`, a timezone-aware ISO-8601 `timestamp`, `temperature`, and `bpm`.
-2. The API checks required authentication headers, the timestamp freshness window, nonce syntax, and the request-body size.
-3. The server calculates HMAC-SHA256 over the exact raw body together with the timestamp and nonce, then compares signatures using a constant-time comparison.
-4. The API validates the schema and allowed sensor ranges. Unknown fields and naive timestamps are rejected.
-5. A SQLite transaction records the nonce and reading. A previously used nonce is rejected, preventing a signed request from being accepted twice within the nonce retention window.
-6. An authorized reader can query the latest records, optionally filtering by device and time range. SQL values are parameterized and the limit is bounded.
-7. CI runs automated regression tests and static/dependency checks when relevant files change.
+For a request with Unix timestamp T, nonce N, and exact request-body bytes B, the signature is:
 
-## Trust boundaries
+~~~text
+HMAC-SHA256(device_secret, ASCII(T + "." + N + ".") + B)
+~~~
 
-- **Sensors → ESP32:** sensor values can be noisy, disconnected, or spoofed. Software validation cannot prove clinical accuracy.
-- **ESP32 → API:** HMAC provides request authenticity only when the secret remains confidential. Use HTTPS as well; HMAC is not encryption.
-- **API → SQLite:** database files contain sensitive readings. Restrict filesystem permissions, backups, and retention.
-- **API → dashboard/browser:** browser code is visible to visitors. Never embed `IOT_READ_API_TOKEN` or device secrets in HTML, JavaScript, or a public CSV URL.
-- **GitHub CI:** workflows execute code from the branch under test. Permissions are read-only and no production secrets are needed for these tests.
+The API verifies the timestamp is within five minutes, validates the nonce syntax, verifies the signature with a constant-time comparison, validates the payload, and atomically stores the nonce and reading. Reusing a nonce results in a conflict. The HMAC authenticates the message; TLS is still required to protect transport.
 
-## Current versus planned
+## Dashboard authentication
 
-| Capability | Status |
-| --- | --- |
-| Static CSV dashboard and browser regression tests | Present |
-| HMAC-authenticated API ingestion | Present in the Phase 2 branch |
-| Read-token-protected history endpoint | Present |
-| Device/time-range history filters | Added in Phase 3 |
-| Unified automated security verification | Added in Phase 3; must pass on the final commit |
-| ESP32 firmware and device-side signing | Not present; integration blocked on source/hardware details |
-| Secure dashboard login/session and API connection | Not present |
-| HTTPS reverse proxy, rate limiting, encrypted storage, retention automation | Deployment work remains |
+The user enters the dashboard password into the same-origin page. The server checks the configured Origin and password, then sets a short-lived signed session cookie marked HttpOnly and SameSite=Strict. Secure is enabled by default and should remain enabled over HTTPS. Local loopback testing may explicitly disable Secure because the local server uses HTTP.
 
-## Design principles
+The dashboard fetches history using the cookie; it never reads or stores IOT_READ_API_TOKEN. Login/logout Origin checks and same-site cookie policy reduce cross-site request risks. This is a prototype authentication layer, not a replacement for a production identity provider, rate limiting, monitoring, or session revocation infrastructure.
 
-- Keep secrets on the device/server side; never ship read credentials to a static browser.
-- Validate inputs at the API boundary, not only in the dashboard.
-- Fail closed when authentication is not configured.
-- Keep test data synthetic and avoid logging health payloads.
-- Treat all dashboards and threshold indicators as educational/informational, not medical diagnosis.
+## Database
+
+- readings stores device_id, sensor timestamp, temperature, BPM, and server received_at time.
+- used_nonces tracks accepted nonces and removes expired entries during later ingestion.
+- SQL parameters are bound; request fields are not interpolated into SQL.
+- SQLite files are local prototype data and are not encrypted at rest by this application.
+
+## Hardware boundary
+
+The firmware sketch uses a DHT11 example on GPIO 4 and requires a real CA certificate, Wi-Fi settings, endpoint, device ID, and device HMAC secret in a local ignored secrets.h file. The heart-rate adapter is a deliberate TODO until the actual sensor model is known; it returns NAN so the firmware fails closed rather than uploading fabricated BPM. Physical compilation, wiring, sensor calibration, and TLS configuration remain unverified.
+
+## Trust boundaries and production gaps
+
+- The device and browser are untrusted clients; the API validates all incoming readings.
+- The browser receives only a session cookie, never the server bearer token.
+- The API does not terminate TLS. Use a trusted HTTPS reverse proxy or private network.
+- Use unique per-device secrets, secure provisioning, rotation/revocation, rate limiting, audit events, encrypted storage/backups, data retention, and monitoring before any real health data is processed.
+- Synthetic test data must be identified as synthetic. This is not a medical or diagnostic system.

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>ESP32 Health Monitor — API Dashboard</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#121a2e; --line:#293550; --text:#edf3ff; --muted:#a8b4ca; --accent:#6ee7d8; --danger:#ff9d9d; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(ellipse at top,#182747,var(--bg) 58%); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; min-height:100vh; }
+    main { width:min(1100px,calc(100% - 32px)); margin:38px auto; }
+    header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }
+    h1 { font-size:clamp(1.5rem,3vw,2.2rem); margin:0; letter-spacing:-.03em; }
+    h2 { font-size:1.1rem; margin:0 0 12px; }
+    p { color:var(--muted); }
+    .panel { background:rgba(18,26,46,.94); border:1px solid var(--line); border-radius:18px; padding:22px; margin-bottom:18px; box-shadow:0 16px 40px #0002; }
+    .notice { color:var(--muted); font-size:.9rem; }
+    label { display:block; font-weight:600; margin:12px 0 6px; }
+    input,button { font:inherit; border-radius:10px; padding:11px 13px; }
+    input { width:100%; color:var(--text); background:#0a1121; border:1px solid #405071; }
+    button { border:0; background:var(--accent); color:#071b22; font-weight:700; cursor:pointer; }
+    button.secondary { background:#273550; color:var(--text); border:1px solid #405071; }
+    button:focus-visible,input:focus-visible { outline:3px solid #b7fff4; outline-offset:2px; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+    .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+    .metric { background:#0c1426; border:1px solid var(--line); border-radius:14px; padding:16px; }
+    .metric .value { font-size:2rem; font-weight:750; letter-spacing:-.04em; margin:6px 0; }
+    .muted { color:var(--muted); }
+    .status { min-height:1.5em; color:var(--muted); }
+    .status.error { color:var(--danger); }
+    .hidden { display:none !important; }
+    .table-wrap { overflow:auto; }
+    table { width:100%; border-collapse:collapse; font-size:.92rem; }
+    th,td { text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th { color:var(--muted); font-weight:600; }
+    canvas { display:block; width:100%; height:220px; }
+    @media (max-width:600px) { main { width:calc(100% - 20px); margin:20px auto; } .panel { padding:15px; } }
+  </style>
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>ESP32 Health Monitor</h1>
+      <p>Authenticated API dashboard · prototype readings only</p>
+    </div>
+    <button id="logoutButton" class="secondary hidden" type="button">Log out</button>
+  </header>
+
+  <section id="loginPanel" class="panel">
+    <h2>Sign in to view readings</h2>
+    <p class="notice">The dashboard uses a short-lived HttpOnly session cookie. The server-side read API token is never placed in this page.</p>
+    <form id="loginForm">
+      <label for="password">Dashboard password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512">
+      <div class="actions"><button type="submit">Sign in</button></div>
+    </form>
+    <p id="loginStatus" class="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="dashboardPanel" class="hidden">
+    <div class="panel">
+      <div class="actions" style="margin-top:0;justify-content:space-between;align-items:center">
+        <div><h2>Latest measurements</h2><p class="notice">Synthetic simulator values are for integration testing only, not medical use.</p></div>
+        <button id="refreshButton" type="button">Refresh</button>
+      </div>
+      <div class="metrics">
+        <article class="metric"><div class="muted">Latest temperature</div><div id="temperatureValue" class="value">—</div><div class="muted">°C</div></article>
+        <article class="metric"><div class="muted">Latest heart rate</div><div id="bpmValue" class="value">—</div><div class="muted">BPM</div></article>
+        <article class="metric"><div class="muted">Device</div><div id="deviceValue" class="value" style="font-size:1.2rem">—</div><div id="updatedValue" class="muted">No readings yet</div></article>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Temperature trend</h2>
+      <canvas id="temperatureChart" width="1000" height="220" role="img" aria-label="Temperature trend for recent readings"></canvas>
+      <p id="chartDescription" class="notice">A trend appears after readings have been received.</p>
+    </div>
+    <div class="panel">
+      <h2>Reading history</h2>
+      <p id="historyStatus" class="status" role="status" aria-live="polite"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp (UTC)</th><th>Device</th><th>Temperature °C</th><th>Heart rate BPM</th></tr></thead>
+          <tbody id="readingsBody"><tr><td colspan="4">No readings loaded.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  <p class="notice">Educational prototype only. Sensor quality, calibration, privacy, and production deployment require separate verification.</p>
+</main>
+</body>
+</html>
