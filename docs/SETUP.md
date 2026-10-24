@@ -81,7 +81,11 @@ The dashboard reads recent history through /api/v1/dashboard/readings and can be
 - Dashboard login/logout require the Origin header to match IOT_DASHBOARD_ORIGIN.
 - Set IOT_COOKIE_SECURE=true behind HTTPS. Do not expose the development server directly to the internet.
 
-## 6. Run automated checks
+## 6. Operations and maintenance
+
+For per-device HMAC keys, rate limits, readiness, audit events, and backup-before-delete retention, see [OPERATIONS.md](OPERATIONS.md). The simulator retries transient responses with bounded backoff, but the prototype does not guarantee exactly-once delivery.
+
+## 7. Run automated checks
 
 ~~~powershell
 python -m pytest -q tests
@@ -93,7 +97,7 @@ pip-audit
 
 GitHub Actions runs the Python tests, Node dashboard tests, Bandit, and pip-audit on pushes and pull requests. Check the run attached to the exact commit SHA.
 
-## 7. Firmware status
+## 8. Firmware status
 
 The checked-in sketch demonstrates Wi-Fi, NTP, certificate-validated HTTPS, and HMAC signing. It includes a DHT11 example on GPIO 4, but the heart-rate adapter deliberately returns an invalid sample until the actual sensor model and library are confirmed. As a result, it will not submit invented BPM values. See FIRMWARE.md for the setup and remaining hardware-specific work.
 
