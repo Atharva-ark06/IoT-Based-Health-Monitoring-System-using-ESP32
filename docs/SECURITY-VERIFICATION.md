@@ -15,7 +15,7 @@ bandit -q -r backend -ll
 pip-audit
 ~~~
 
-GitHub Actions runs the Python API/session/integration tests, Node dashboard regression tests, Bandit, and pip-audit. Review the workflow for the exact pull-request head SHA.
+GitHub Actions runs the Python API/session/integration and firmware-readiness tests, Node dashboard regression tests, Bandit, and pip-audit. A separate firmware workflow compiles the ESP32 sketch for a generic ESP32 target using placeholder configuration. Review both workflow runs for the exact pull-request head SHA.
 
 ## API/device tests
 
@@ -33,6 +33,14 @@ GitHub Actions runs the Python API/session/integration tests, Node dashboard reg
 - Login fails closed if dashboard secrets are missing.
 - Dashboard HTML includes a restrictive Content Security Policy and no-store headers.
 - Browser code does not embed the server bearer token and inserts readings with textContent, not HTML parsing.
+
+## Firmware checks now automated
+
+- Static tests assert certificate validation is configured and no insecure TLS call is present in the sketch.
+- Static tests assert the heart-rate adapter fails closed while the sensor model is unknown.
+- Static tests assert the signed-body format and expected authentication headers are present.
+- Static tests assert secret placeholders are used and the local secrets.h file is ignored by Git.
+- GitHub Actions compiles the sketch with Arduino CLI and placeholder credentials; no physical hardware is needed for this build check.
 
 ## Firmware checks still required
 
