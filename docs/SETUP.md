@@ -97,6 +97,10 @@ GitHub Actions runs the Python tests, Node dashboard tests, Bandit, and pip-audi
 
 The checked-in sketch demonstrates Wi-Fi, NTP, certificate-validated HTTPS, and HMAC signing. It includes a DHT11 example on GPIO 4, but the heart-rate adapter deliberately returns an invalid sample until the actual sensor model and library are confirmed. As a result, it will not submit invented BPM values. See FIRMWARE.md for the setup and remaining hardware-specific work.
 
+## Container deployment
+
+For the non-root container image, persistent SQLite volume, required environment variables, loopback-only port binding, and deployment limitations, follow [DEPLOYMENT.md](DEPLOYMENT.md). The container template is intended to sit behind a separately managed HTTPS reverse proxy for remote access.
+
 ## Teardown
 
 Stop the API with Ctrl+C. Close the terminals containing environment variables when finished. Remove the local data directory if you want to discard synthetic test readings. Rotate any secret that was copied to a public location.
