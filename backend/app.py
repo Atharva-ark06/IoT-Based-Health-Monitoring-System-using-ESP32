@@ -166,7 +166,7 @@ def create_app(
 
     def require_same_origin(request: Request) -> None:
         origin = request.headers.get("origin", "").rstrip("/")
-        if not origin or not secrets.compare_digest(origin, allowed_origin):
+        if not origin or not secrets.compare_digest(origin.encode("utf-8"), allowed_origin.encode("utf-8")):
             raise HTTPException(status_code=403, detail="Cross-origin request rejected")
 
     @app.get("/healthz")
@@ -208,7 +208,7 @@ def create_app(
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise HTTPException(status_code=400, detail="Invalid login request") from None
         password = credentials.get("password") if isinstance(credentials, dict) else None
-        if not isinstance(password, str) or not secrets.compare_digest(configured_dashboard_password, password):
+        if not isinstance(password, str) or not secrets.compare_digest(\n            configured_dashboard_password.encode("utf-8"), password.encode("utf-8")\n        ):
             raise HTTPException(status_code=401, detail="Invalid dashboard credentials")
 
         response.set_cookie(
@@ -289,7 +289,7 @@ def create_app(
         body = await _read_limited_body(request, MAX_BODY_BYTES)
 
         expected = _signature(secret, x_device_timestamp, x_device_nonce, body)
-        if not hmac.compare_digest(expected, x_device_signature.lower()):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", x_device_signature) or not hmac.compare_digest(\n            expected, x_device_signature.lower()\n        ):
             raise HTTPException(status_code=401, detail="Invalid device authentication")
         try:
             reading = Reading.model_validate_json(body)
@@ -345,7 +345,7 @@ def create_app(
             or not separator
             or scheme.lower() != "bearer"
             or not supplied_token
-            or not secrets.compare_digest(expected_token, supplied_token)
+            or not secrets.compare_digest(expected_token.encode("utf-8"), supplied_token.encode("utf-8"))
         ):
             if not expected_token:
                 raise HTTPException(status_code=503, detail="Reading access is not configured")
