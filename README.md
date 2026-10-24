@@ -14,7 +14,7 @@ An educational IoT prototype for collecting temperature and heart-rate readings,
 - Dashboard requests are same-origin, login/logout enforce the configured Origin, and responses set restrictive security headers.
 - A hardware-free simulator signs and posts synthetic readings using the same request format as the API.
 - An ESP32 Arduino integration scaffold demonstrates HTTPS, CA certificate validation, NTP time synchronization, HMAC request signing, and secret separation.
-- CI runs Python tests, dashboard regression tests, Bandit, pip-audit, and a hardware-free ESP32 firmware compile job.
+- CI runs Python tests, dashboard regression tests, Bandit, pip-audit, a hardware-free ESP32 firmware compile job, and a container build/configuration check.
 
 ## Architecture
 
@@ -115,7 +115,10 @@ tests/
   test_dashboard_auth.py
   dashboard-security.test.mjs
   dashboard-integration.test.mjs
+Dockerfile
+compose.yaml
 docs/
+  DEPLOYMENT.md
   ARCHITECTURE.md
   SETUP.md
   FIRMWARE.md
@@ -134,6 +137,7 @@ The firmware sketch defaults to a DHT11 temperature sensor on GPIO 4 as an examp
 - [Setup guide](docs/SETUP.md)
 - [Architecture and data flow](docs/ARCHITECTURE.md)
 - [Firmware integration and build readiness](docs/FIRMWARE.md)
+- [Container deployment guide](docs/DEPLOYMENT.md)
 - [End-to-end integration tests](docs/INTEGRATION-TESTING.md)
 - [Security verification checklist](docs/SECURITY-VERIFICATION.md)
 - [Threat model and reporting](SECURITY.md)

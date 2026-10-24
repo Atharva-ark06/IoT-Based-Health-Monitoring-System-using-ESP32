@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    ports:
+      # Bind locally; put a trusted HTTPS reverse proxy in front for remote access.
+      - "127.0.0.1:8000:8000"
+    environment:
+      IOT_DEVICE_HMAC_SECRET: ${IOT_DEVICE_HMAC_SECRET:?Set IOT_DEVICE_HMAC_SECRET in your environment}
+      IOT_READ_API_TOKEN: ${IOT_READ_API_TOKEN:?Set IOT_READ_API_TOKEN in your environment}
+      IOT_DASHBOARD_PASSWORD: ${IOT_DASHBOARD_PASSWORD:?Set IOT_DASHBOARD_PASSWORD in your environment}
+      IOT_SESSION_SECRET: ${IOT_SESSION_SECRET:?Set IOT_SESSION_SECRET in your environment}
+      IOT_DASHBOARD_ORIGIN: ${IOT_DASHBOARD_ORIGIN:?Set IOT_DASHBOARD_ORIGIN to the external HTTPS origin}
+      IOT_COOKIE_SECURE: "true"
+      IOT_DATABASE_PATH: /app/data/readings.sqlite3
+    volumes:
+      - iot-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  iot-data:

@@ -1,0 +1,48 @@
+name: Container build
+
+on:
+  push:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "backend/**"
+      - "health/**"
+      - ".github/workflows/container-build.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "backend/**"
+      - "health/**"
+      - ".github/workflows/container-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build container image
+        run: docker build --tag iot-health-monitoring:ci .
+
+      - name: Validate Compose configuration
+        env:
+          # Validation-only placeholders; never used to start or deploy the service.
+          IOT_DEVICE_HMAC_SECRET: ci-placeholder-device-secret
+          IOT_READ_API_TOKEN: ci-placeholder-read-token
+          IOT_DASHBOARD_PASSWORD: ci-placeholder-dashboard-password
+          IOT_SESSION_SECRET: ci-placeholder-session-secret-32-chars-minimum
+          IOT_DASHBOARD_ORIGIN: https://dashboard.example.invalid
+        run: docker compose config --quiet

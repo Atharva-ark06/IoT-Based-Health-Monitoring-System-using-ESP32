@@ -1,8 +1,8 @@
-# Project Analysis — Phase 6
+# Project Analysis — Phase 7
 
 ## Project summary
 
-The project is an educational IoT health-monitoring prototype with a FastAPI ingestion API, SQLite storage, a session-protected API dashboard, a synthetic device simulator, and an ESP32 firmware scaffold. The simulator → signed API → database → authenticated dashboard flow is covered by automated tests. Phase 6 adds an Arduino CLI compile workflow and static firmware-readiness tests, so firmware source changes can be checked without physical hardware.
+The project is an educational IoT health-monitoring prototype with a FastAPI ingestion API, SQLite storage, a session-protected API dashboard, a synthetic device simulator, and an ESP32 firmware scaffold. The simulator → signed API → database → authenticated dashboard flow is covered by automated tests. Phase 6 adds an Arduino CLI compile workflow and static firmware-readiness tests. Phase 7 adds a non-root container image, a hardened Compose template, deployment guidance, configuration tests, and a CI image build.
 
 **Important boundary:** the ESP32 sketch is not hardware-verified. The heart-rate adapter intentionally remains unfinished until the exact sensor model and library are confirmed. Synthetic data verifies the software protocol path, not physical sensors or medical accuracy.
 
@@ -19,7 +19,7 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 | Database | SQLite, parameterized statements, indexes, bounded queries | Not encrypted at rest; backup, retention, migration, and concurrency plan are limited |
 | Browser security | HttpOnly/SameSite cookie, same-origin checks, CSP, no bearer token in browser JS, text-only rendering | Browser-side data is visible to the authorized viewer; login rate limiting is not implemented here |
 | Automation | Python and Node tests, Bandit, pip-audit, firmware compile job | Green CI does not certify physical hardware or deployment safety |
-| Operations | Health endpoint and environment-configured secrets | HTTPS termination, rate limiting, monitoring, backups, retention, and secret rotation still need deployment work |
+| Operations | Health endpoint, environment-configured secrets, non-root container, persistent volume, loopback-only port binding, read-only root filesystem, dropped capabilities, and container build CI | HTTPS termination, rate limiting, monitoring, backups, retention, secret rotation, and deployment-specific validation remain required |
 
 ## Pros
 
@@ -44,7 +44,7 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 
 1. **Complete physical integration:** confirm board and sensor models, implement and validate the BPM adapter, flash the firmware, and verify CA-validated HTTPS on the device.
 2. **Device lifecycle security:** enrollment, unique per-device credentials, rotation/revocation, and auditable device status.
-3. **Operational controls:** rate limiting, audit events, monitoring, backup/restore tests, data retention/deletion, and deployment secrets.
+3. **Operational controls:** login/API rate limiting, audit events, monitoring, backup/restore tests, data retention/deletion, and managed deployment secrets.
 4. **Resilience:** offline buffering, retry/backoff, idempotent delivery, clock drift handling, and fault-injection tests.
 5. **Advanced analytics:** only after collecting reliable data, add transparent sensor-quality and anomaly flags without medical claims.
 
@@ -55,6 +55,7 @@ The project is an educational IoT health-monitoring prototype with a FastAPI ing
 - [x] Dashboard code does not embed the server bearer token and renders readings as text.
 - [x] CI runs Python tests, Node tests, Bandit, and pip-audit.
 - [x] Firmware source has a hardware-free compile workflow and static readiness checks.
+- [x] Container image, hardened Compose template, deployment documentation, and container CI have been added.
 - [ ] The latest pull-request head has a successful full CI run.
 - [ ] Exact hardware/sensor models are confirmed and firmware is built on the target toolchain.
 - [ ] Physical device sends a signed HTTPS reading that appears in the authenticated dashboard.
