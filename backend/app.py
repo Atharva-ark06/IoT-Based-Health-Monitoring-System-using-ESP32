@@ -242,10 +242,13 @@ def create_app(
     @app.get("/api/v1/dashboard/readings")
     def dashboard_readings(
         request: Request,
+        response: Response,
         limit: int = Query(default=100, ge=1, le=500),
         device_id: str | None = Query(default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN),
     ) -> dict[str, object]:
         require_dashboard_session(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         try:
             with _connect(database) as connection:
                 rows = connection.execute(
@@ -336,6 +339,7 @@ def create_app(
 
     @app.get("/api/v1/readings")
     def list_readings(
+        response: Response,
         authorization: Annotated[str | None, Header()] = None,
         limit: int = Query(default=100, ge=1, le=500),
         device_id: str | None = Query(default=None, min_length=1, max_length=64, pattern=DEVICE_ID_PATTERN),
@@ -355,6 +359,8 @@ def create_app(
                 raise HTTPException(status_code=503, detail="Reading access is not configured")
             raise HTTPException(status_code=401, detail="Reading access requires authentication")
 
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         start_utc = _normalize_filter_timestamp(start, "start")
         end_utc = _normalize_filter_timestamp(end, "end")
         if start_utc and end_utc and start_utc > end_utc:
