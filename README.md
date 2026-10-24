@@ -1,221 +1,148 @@
-# IoT-Based Health Monitoring System  using ESP32
+# IoT-Based Health Monitoring System using ESP32
 
-An educational IoT health-monitoring prototype for collecting temperature and heart-rate readings, with a browser dashboard and an optional authenticated ingestion API.
+An educational IoT prototype for collecting temperature and heart-rate readings, with an authenticated ingestion API, SQLite history, a session-protected browser dashboard, and a hardware-free device simulator.
 
-> **Status:** the API and dashboard are independently testable, but this is not yet an end-to-end device system. The repository does not currently contain the ESP32 firmware, and the static dashboard is not connected to the authenticated API. This project is not a medical device or diagnostic tool.
+> **Status:** the API → database → authenticated dashboard path can be exercised using synthetic simulator data. The firmware integration scaffold is checked in, but physical hardware has not been verified and the heart-rate sensor adapter is intentionally unfinished until the exact sensor model is known. This is not a medical device or diagnostic tool.
 
-## Contents
+## What works now
 
-- [Project overview](#project-overview)
-- [Architecture and hierarchy](#architecture-and-hierarchy)
-- [Features](#features)
-- [Technology stack](#technology-stack)
-- [Repository layout](#repository-layout)
-- [Quick start](#quick-start)
-- [API security model](#api-security-model)
-- [Run the verification suite](#run-the-verification-suite)
-- [Documentation](#documentation)
-- [Pros and limitations](#pros-and-limitations)
-- [Roadmap](#roadmap)
-- [Disclaimer](#disclaimer)
+- FastAPI accepts signed device readings using HMAC-SHA256.
+- Requests have timestamp freshness checks, nonce replay prevention, payload validation, and a 16 KiB body limit.
+- SQLite stores validated readings with parameterized queries.
+- Reading history is protected by a separate bearer token for trusted clients.
+- The new API dashboard (/dashboard) uses a password login and short-lived HttpOnly, SameSite=Strict session cookie; it does not embed the server read token in browser code.
+- Dashboard requests are same-origin, login/logout enforce the configured Origin, and responses set restrictive security headers.
+- A hardware-free simulator signs and posts synthetic readings using the same request format as the API.
+- An ESP32 Arduino integration scaffold demonstrates HTTPS, CA certificate validation, NTP time synchronization, HMAC request signing, and secret separation.
+- CI runs Python tests, dashboard regression tests, Bandit, and pip-audit.
 
-## Project overview
+## Architecture
 
-The intended system uses an ESP32 microcontroller with a temperature sensor (DHT11) and a heart-rate sensor. Readings are intended to be transmitted over Wi-Fi for viewing and historical analysis. The repository currently includes a static dashboard and a Python API prototype that can be developed and verified separately.
+~~~text
+Synthetic simulator ─┐
+                     ├─ signed request ─> FastAPI ─> SQLite
+ESP32 firmware* ─────┘                       │
+                                             ├─ bearer-authenticated history API
+Browser ─ dashboard password ─ session cookie┘
+              *Firmware template is present; sensor adapter and physical validation remain.
+~~~
 
-### Features currently present
+The older health/sensor_dashboard.html is the standalone CSV dashboard. The integrated dashboard is /dashboard served by the API. Do not put server credentials in the older static dashboard or in public HTML.
 
-- Static HTML/CSS/JavaScript dashboard with configurable HTTPS CSV input.
-- FastAPI service for signed reading submissions.
-- HMAC-SHA256 request authentication, timestamp freshness checks, and nonce replay prevention.
-- Server-side payload validation, request-size limits, and parameterized SQLite operations.
-- Separately authenticated reading history with device/time filters and a bounded result count.
-- Dashboard regression tests and API security/regression tests.
-- GitHub Actions verification with Bandit static analysis and pip-audit dependency checks.
+## Quick start (Windows PowerShell)
 
-### Not yet implemented or integrated
+Requirements: Python 3.11+, Node.js 20+ for tests, and Git.
 
-- Checked-in ESP32 firmware and device-side request signing.
-- Secure per-device enrollment, key provisioning, rotation, and revocation.
-- Connection from the static dashboard to authenticated API history.
-- Production deployment controls such as TLS termination, rate limiting, encrypted storage, retention, monitoring, and managed backups.
-
-## Architecture and hierarchy
-
-```text
-[Temperature + heart-rate sensors]
-                |
-                v
-       [ESP32 firmware]       <- firmware source not currently checked in
-                |
-        Wi-Fi / HTTPS
-                |
-                v
- [FastAPI authenticated ingestion]
-                |
-                v
-          [SQLite store]
-                |
-        authenticated API
-                |
-                v
- [Authorized application/dashboard] <- integration is future work
-
-[Existing static dashboard] --> configured HTTPS CSV source
-                                (separate path today)
-```
-
-**Trust boundaries:** sensors produce potentially noisy readings; the API validates and authenticates requests; the database stores readings; the dashboard must not receive server-only credentials. HMAC provides message authentication, not encryption. Use HTTPS or a private network for transport.
-
-## Technology stack
-
-| Layer | Technology |
-| --- | --- |
-| Edge hardware (planned) | ESP32, DHT11, heart-rate sensor |
-| API | Python, FastAPI, Pydantic |
-| Storage | SQLite |
-| Dashboard | HTML, CSS, JavaScript |
-| API tests | pytest, FastAPI TestClient |
-| Dashboard tests | Node.js built-in test runner |
-| Security automation | GitHub Actions, Bandit, pip-audit |
-
-## Repository layout
-
-```text
-backend/
-  app.py                         # ingestion and history API
-  requirements.txt               # Python dependencies
-health/
-  sensor_dashboard.html          # static dashboard
-tests/
-  test_ingestion_api.py          # API/security regression tests
-  dashboard-security.test.mjs    # dashboard regression tests
-docs/
-  ARCHITECTURE.md
-  SETUP.md
-  PROJECT-ANALYSIS.md
-  SECURITY-VERIFICATION.md
-.github/workflows/
-  security-verification.yml      # consolidated CI/security checks
-SECURITY.md                      # threat model and security guidance
-README.md
-```
-
-Additional project reports or presentations may exist at the repository root.
-
-## Quick start
-
-### 1. Requirements
-
-- Git
-- Python 3.11 or newer
-- Node.js 20 or newer (for dashboard tests)
-- A modern browser
-
-### 2. Clone and install (Windows PowerShell)
-
-```powershell
+~~~powershell
 git clone https://github.com/Atharva-ark06/IoT-Based-Health-Monitoring-System-using-ESP32.git
 cd IoT-Based-Health-Monitoring-System-using-ESP32
-
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r backend/requirements.txt
-```
+~~~
 
-If PowerShell blocks virtual-environment activation, invoke ` .\.venv\Scripts\python.exe ` directly rather than weakening machine-wide execution policy.
+Generate separate local development secrets in the same PowerShell session:
 
-### 3. Configure local secrets
-
-Run in the same PowerShell session that will start the API. These generate separate random development secrets; never commit them or put them in the dashboard.
-
-```powershell
+~~~powershell
 $env:IOT_DEVICE_HMAC_SECRET = (python -c "import secrets; print(secrets.token_hex(32))")
 $env:IOT_READ_API_TOKEN = (python -c "import secrets; print(secrets.token_urlsafe(32))")
+$env:IOT_DASHBOARD_PASSWORD = (python -c "import secrets; print(secrets.token_urlsafe(32))")
+$env:IOT_SESSION_SECRET = (python -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:IOT_DASHBOARD_ORIGIN = "http://127.0.0.1:8000"
+$env:IOT_COOKIE_SECURE = "false"
 $env:IOT_DATABASE_PATH = "data/readings.sqlite3"
-
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
-```
+~~~
 
-In a second terminal:
+IOT_COOKIE_SECURE=false is **for loopback-only local HTTP testing**. Use HTTPS and leave secure cookies enabled in a deployed environment. Do not expose the development server directly to the internet.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/healthz
-$headers = @{ Authorization = "Bearer $env:IOT_READ_API_TOKEN" }
-Invoke-RestMethod "http://127.0.0.1:8000/api/v1/readings?limit=20" -Headers $headers
-```
+Open http://127.0.0.1:8000/dashboard and sign in with the generated dashboard password from the same terminal session.
 
-The health endpoint should return `{"status":"ok"}`. A new database returns an empty history. The write endpoint rejects unsigned requests; a production device signing client is not included yet. See the [full setup guide](docs/SETUP.md) for details and safe teardown.
+In a second terminal, activate the environment and set IOT_DEVICE_HMAC_SECRET to the same generated device secret, then send synthetic readings:
 
-### 4. Open the dashboard
+~~~powershell
+python -m simulator.device_simulator --count 5 --interval 1
+~~~
 
-Open `health/sensor_dashboard.html` in a browser or serve it from a static web server. Configure its `sensor-data-url` meta tag with an HTTPS CSV source intended to be visible to dashboard users:
+The dashboard refreshes manually with the **Refresh** button. Simulator readings are synthetic and must never be represented as real patient measurements.
 
-```html
-<meta name="sensor-data-url" content="https://example.com/readings.csv">
-```
-
-The URL is visible to visitors. Do not include credentials or a private spreadsheet URL. The current dashboard does not consume the authenticated API.
-
-## API security model
+## API endpoints
 
 | Endpoint | Authentication | Purpose |
 | --- | --- | --- |
-| `GET /healthz` | None | Minimal service health check |
-| `POST /api/v1/readings` | HMAC-SHA256 device signature | Validate and store a reading |
-| `GET /api/v1/readings` | Bearer token | Read bounded history; optional `device_id`, `start`, and `end` filters |
+| GET /healthz | None | Minimal service health |
+| POST /api/v1/readings | HMAC device signature | Validate and store a reading |
+| GET /api/v1/readings | Authorization: Bearer IOT_READ_API_TOKEN | Trusted-client history with filters |
+| GET /dashboard | Page is public; data requires login | Integrated browser UI |
+| POST /api/v1/dashboard/login | Dashboard password + same-origin check | Create short-lived session |
+| GET /api/v1/dashboard/readings | HttpOnly session cookie | Read recent dashboard history |
+| POST /api/v1/dashboard/logout | HttpOnly session cookie + same-origin check | End browser session |
 
-Device writes require `X-Device-Timestamp`, `X-Device-Nonce`, and `X-Device-Signature`. The signature covers the exact request body together with the timestamp and nonce. The API enforces a five-minute freshness window, rejects reused nonces, validates the schema and value ranges, and caps request size. Reading access uses the separate `IOT_READ_API_TOKEN`.
+The device signature covers the exact request bytes: unix_timestamp + "." + nonce + "." + raw_json_body. The timestamp header must be within five minutes, and a nonce cannot be reused. Readings use timezone-aware ISO-8601 timestamps and validated ranges.
 
-**Security boundary:** never embed `IOT_READ_API_TOKEN` in browser JavaScript, HTML, public CSV URLs, screenshots, or source control. HMAC does not encrypt traffic. Do not expose the development server directly to the internet; production use requires HTTPS, per-device credentials, rate limiting, access controls, encrypted storage/backups, retention rules, monitoring, and secret rotation. See [SECURITY.md](SECURITY.md).
+## Tests and security checks
 
-## Run the verification suite
+~~~powershell
+python -m pytest -q tests
+node --test tests/*.test.mjs
+python -m pip install bandit pip-audit
+bandit -q -r backend -ll
+pip-audit
+~~~
 
-From the repository root with the Python virtual environment active:
+GitHub Actions runs the same Python and Node test suites plus Bandit and pip-audit. Check the workflow associated with the exact commit/PR head.
 
-```powershell
-python -m pytest -q tests/test_ingestion_api.py
-node --test tests/dashboard-security.test.mjs
-```
+## Repository layout
 
-The unified GitHub Actions workflow runs both suites plus Bandit and pip-audit. Check the workflow result for the exact commit or pull-request head you plan to merge; an earlier successful run does not prove a later commit passes.
+~~~text
+backend/
+  app.py
+  requirements.txt
+firmware/esp32_health_monitor/
+  esp32_health_monitor.ino
+  secrets.example.h
+health/
+  sensor_dashboard.html       # existing HTTPS CSV dashboard
+  api_dashboard.html          # API-backed dashboard page
+  api_dashboard.js            # session-cookie client; no bearer token
+simulator/
+  device_simulator.py         # synthetic signed readings
+tests/
+  test_ingestion_api.py
+  test_device_simulator.py
+  test_dashboard_auth.py
+  dashboard-security.test.mjs
+  dashboard-integration.test.mjs
+docs/
+  ARCHITECTURE.md
+  SETUP.md
+  FIRMWARE.md
+  INTEGRATION-TESTING.md
+  PROJECT-ANALYSIS.md
+  SECURITY-VERIFICATION.md
+SECURITY.md
+~~~
+
+## Hardware integration status
+
+The firmware sketch defaults to a DHT11 temperature sensor on GPIO 4 as an example. The heart-rate adapter intentionally returns an invalid value until the actual sensor model and its library/sampling method are selected. Therefore the sketch will not upload fabricated BPM values. Review docs/FIRMWARE.md before connecting hardware. The CA certificate, Wi-Fi credentials, API URL, device ID, and device HMAC secret must be configured locally in an ignored secrets.h file.
 
 ## Documentation
 
-- [Architecture and hierarchy](docs/ARCHITECTURE.md)
 - [Setup guide](docs/SETUP.md)
-- [Project analysis, pros and cons, and roadmap](docs/PROJECT-ANALYSIS.md)
+- [Architecture and data flow](docs/ARCHITECTURE.md)
+- [Firmware integration](docs/FIRMWARE.md)
+- [End-to-end integration tests](docs/INTEGRATION-TESTING.md)
 - [Security verification checklist](docs/SECURITY-VERIFICATION.md)
-- [Threat model and security guidance](SECURITY.md)
+- [Threat model and reporting](SECURITY.md)
+- [Project analysis and roadmap](docs/PROJECT-ANALYSIS.md)
 
-## Pros and limitations
+## Limitations and safety
 
-**Pros**
-- Separates dashboard, API, persistence, tests, and CI responsibilities.
-- Demonstrates request authentication, replay prevention, input validation, parameterized SQL, and dependency scanning.
-- Supports repeatable automated regression checks.
-- Provides a clear foundation for learning IoT security and backend engineering.
-
-**Limitations**
-- No checked-in firmware means device-side signing and end-to-end operation cannot yet be verified.
-- The dashboard and authenticated API are separate paths.
-- SQLite is not encrypted at rest by the application.
-- There is no device enrollment, per-device authorization, production rate limiting, or user/role management.
-- Sensor accuracy and clinical suitability are not established.
-
-## Roadmap
-
-1. Add and review the actual ESP32 firmware and sensor configuration.
-2. Implement device-side signing, TLS certificate validation, and secure per-device key provisioning.
-3. Add an authenticated server-side dashboard integration without exposing private tokens.
-4. Add deployment controls: rate limiting, encrypted storage/backups, retention/deletion, monitoring, and secret rotation.
-5. Test the complete device → API → history → authorized dashboard flow using synthetic data.
-
-## Disclaimer
-
-This is an academic prototype for educational purposes. Readings are informational only and must not be used for diagnosis or as a substitute for professional medical equipment or advice.
-
----
-
-Maintained by [Atharva Kulkarni](https://github.com/Atharva-ark06).
+- This is an academic prototype, not a medical device, diagnostic service, or emergency alert system.
+- Synthetic readings are for integration testing only.
+- Physical sensor wiring, calibration, firmware compilation, TLS certificate selection, and device-side behavior still require hardware-specific verification.
+- HMAC authenticates requests; it does not encrypt traffic. Use HTTPS.
+- The dashboard password/session mechanism is a prototype; add proxy-level rate limiting, monitoring, managed secret storage, backups, retention policies, and a production identity/access strategy before real deployment.
+- SQLite data is not encrypted at rest by this application. Avoid using real personal health data until privacy and operational controls are reviewed.
