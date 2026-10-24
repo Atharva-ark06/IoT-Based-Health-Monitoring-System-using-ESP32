@@ -383,11 +383,10 @@ def create_app(
             if isinstance(untrusted_payload, dict)
             else None
         )
-        secret = (
-            configured_device_secrets.get(candidate_id)
-            if configured_device_secrets is not None and isinstance(candidate_id, str)
-            else legacy_secret
-        )
+        if configured_device_secrets is not None:
+            secret = configured_device_secrets.get(candidate_id) if isinstance(candidate_id, str) else None
+        else:
+            secret = legacy_secret
         if not secret:
             # Do not disclose whether a device ID has been enrolled.
             raise HTTPException(status_code=401, detail="Invalid device authentication")
