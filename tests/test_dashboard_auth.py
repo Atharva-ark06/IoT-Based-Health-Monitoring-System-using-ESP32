@@ -70,6 +70,16 @@ def test_login_issues_http_only_same_site_session_and_dashboard_reads_data(tmp_p
     assert history.json()["readings"][0]["device_id"] == "esp32-dashboard-test"
 
 
+def test_non_ascii_password_is_rejected_without_server_error(tmp_path):
+    client = make_client(tmp_path)
+    response = client.post(
+        "/api/v1/dashboard/login",
+        json={"password": "wrong-🔒-password"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 401
+
+
 def test_wrong_password_and_cross_origin_login_are_rejected(tmp_path):
     client = make_client(tmp_path)
     wrong_password = client.post(
