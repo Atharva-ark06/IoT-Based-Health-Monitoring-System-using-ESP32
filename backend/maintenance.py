@@ -23,7 +23,7 @@ def backup_database(source_path: str, backup_path: str) -> Path:
     if destination.exists():
         raise FileExistsError("Backup destination already exists; choose a new path")
     with closing(_connect(str(source))) as source_connection:
-        with sqlite3.connect(str(destination)) as destination_connection:
+        with closing(sqlite3.connect(str(destination))) as destination_connection:
             source_connection.backup(destination_connection)
     try:
         os.chmod(destination, 0o600)
