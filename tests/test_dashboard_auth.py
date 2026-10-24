@@ -68,7 +68,6 @@ def test_login_issues_http_only_same_site_session_and_dashboard_reads_data(tmp_p
     history = client.get("/api/v1/dashboard/readings")
     assert history.status_code == 200
     assert history.json()["readings"][0]["device_id"] == "esp32-dashboard-test"
-    # The browser session route does not return or require the server read token.
 
 
 def test_wrong_password_and_cross_origin_login_are_rejected(tmp_path):
@@ -106,7 +105,13 @@ def test_dashboard_logout_invalidates_cookie(tmp_path):
 
 
 def test_dashboard_login_fails_closed_when_secrets_are_not_configured(tmp_path):
-    client = TestClient(create_app(db_path=str(tmp_path / "readings.sqlite3")))
+    client = TestClient(
+        create_app(
+            db_path=str(tmp_path / "readings.sqlite3"),
+            dashboard_origin="http://testserver",
+            secure_cookies=False,
+        )
+    )
     response = client.post(
         "/api/v1/dashboard/login",
         json={"password": "anything"},
