@@ -1,0 +1,49 @@
+name: ESP32 firmware build
+
+on:
+  push:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware-build.yml"
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-esp32:
+    name: Compile ESP32 sketch (hardware-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 platform
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+
+      - name: Install Arduino libraries
+        run: |
+          arduino-cli lib install "DHT sensor library"
+          arduino-cli lib install "Adafruit Unified Sensor"
+          arduino-cli lib install "ArduinoJson@6.21.5"
+
+      - name: Create local placeholder configuration
+        run: cp firmware/esp32_health_monitor/secrets.example.h firmware/esp32_health_monitor/secrets.h
+
+      - name: Compile firmware for generic ESP32
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 --warnings all firmware/esp32_health_monitor
