@@ -15,7 +15,7 @@ bandit -q -r backend -ll
 pip-audit
 ~~~
 
-GitHub Actions runs the Python API/session/integration and firmware-readiness tests, Node dashboard regression tests, Bandit, and pip-audit. A separate firmware workflow compiles the ESP32 sketch for a generic ESP32 target using placeholder configuration. Review both workflow runs for the exact pull-request head SHA.
+GitHub Actions runs the Python API/session/integration and firmware-readiness tests, Node dashboard regression tests, Bandit, and pip-audit. A separate firmware workflow compiles the ESP32 sketch for a generic ESP32 target using placeholder configuration. The container workflow builds the Docker image and validates the Compose configuration. Review all relevant workflow runs for the exact pull-request head SHA.
 
 ## API/device tests
 
@@ -50,6 +50,14 @@ GitHub Actions runs the Python API/session/integration and firmware-readiness te
 - Provision a unique device secret without committing it.
 - Build with the Arduino toolchain and run on hardware.
 - Confirm HTTPS certificate validation, time synchronization, signed ingestion, reconnect behavior, and duplicate/replay rejection on the live device.
+
+## Container configuration checks
+
+- Automated tests check the image runs as a non-root user and defines a health check.
+- Compose requires explicit device, read-token, dashboard-password, session-secret, and external-origin values.
+- Compose binds the API to loopback by default, persists SQLite data in a named volume, drops Linux capabilities, enables no-new-privileges, and uses a read-only root filesystem.
+- The Docker build context excludes local environment files, database files, and the ESP32 secrets header.
+- CI builds the image and runs `docker compose config --quiet`. These checks do not validate a real HTTPS proxy, production secret store, backup restore, or a live deployment.
 
 ## Manual production review
 
